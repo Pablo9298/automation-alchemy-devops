@@ -363,6 +363,12 @@
         port: "8080"
         proto: tcp
 
+    - name: Disable Jenkins setup wizard (JAVA_ARGS)
+      lineinfile:
+        path: /etc/default/jenkins
+        regexp: '^JAVA_ARGS='
+        line: 'JAVA_ARGS="-Djava.awt.headless=true -Djenkins.install.runSetupWizard=false"'
+
     - name: Start Jenkins
       systemd:
         name: jenkins
@@ -381,6 +387,81 @@
         delay: 10
         timeout: 60
 
+    - name: Ensure curl is installed (for Jenkins CLI)
+      apt:
+        name: curl
+        state: present
+
+    - name: Install Jenkins plugins (pipeline, git, job-dsl)
+      shell: |
+        jenkins-plugin-cli --plugins "workflow-aggregator git job-dsl"
+      args:
+        creates: /var/lib/jenkins/plugins/job-dsl.jpi
+      notify: restart jenkins
+
+    - name: Copy Job DSL script to Jenkins
+      copy:
+        src: ../jenkins/jobs.groovy
+        dest: /var/lib/jenkins/jobs.groovy
+        owner: jenkins
+        group: jenkins
+        mode: "0644"
+
+    - name: Download Jenkins CLI jar
+      get_url:
+        url: "http://localhost:8080/jnlpJars/jenkins-cli.jar"
+        dest: /var/lib/jenkins/jenkins-cli.jar
+        mode: "0644"
+      register: cli_jar
+      retries: 10
+      delay: 3
+      until: cli_jar is succeeded
+
+    - name: Create seed job config.xml for Job DSL
+      copy:
+        dest: /var/lib/jenkins/seed-job-config.xml
+        owner: jenkins
+        group: jenkins
+        mode: "0644"
+        content: |
+          <?xml version='1.1' encoding='UTF-8'?>
+          <project>
+            <actions/>
+            <description>Seed job to create pipeline jobs from Job DSL</description>
+            <keepDependencies>false</keepDependencies>
+            <properties/>
+            <scm class="hudson.scm.NullSCM"/>
+            <canRoam>true</canRoam>
+            <disabled>false</disabled>
+            <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
+            <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+            <triggers/>
+            <concurrentBuild>false</concurrentBuild>
+            <builders>
+              <javaposse.jobdsl.plugin.ExecuteDslScripts plugin="job-dsl@1.87">
+                <scriptText></scriptText>
+                <targets>/var/lib/jenkins/jobs.groovy</targets>
+                <usingScriptText>false</usingScriptText>
+                <ignoreExisting>false</ignoreExisting>
+                <removedJobAction>IGNORE</removedJobAction>
+                <removedViewAction>IGNORE</removedViewAction>
+                <lookupStrategy>JENKINS_ROOT</lookupStrategy>
+                <additionalClasspath></additionalClasspath>
+              </javaposse.jobdsl.plugin.ExecuteDslScripts>
+            </builders>
+            <publishers/>
+            <buildWrappers/>
+          </project>
+
+    - name: Create seed job via Jenkins CLI (no auth, wizard disabled)
+      shell: |
+        java -jar /var/lib/jenkins/jenkins-cli.jar -s http://localhost:8080 create-job seed-job < /var/lib/jenkins/seed-job-config.xml || true
+
+    - name: Run seed job to generate pipeline job
+      shell: |
+        java -jar /var/lib/jenkins/jenkins-cli.jar -s http://localhost:8080 build seed-job -s -v
+
+
     - name: Get Jenkins initial password
       slurp:
         src: /var/lib/jenkins/secrets/initialAdminPassword
@@ -391,3 +472,9 @@
       debug:
         msg: "Jenkins initial password: {{ jenkins_password.content | b64decode }}"
       when: jenkins_password is succeeded
+
+  handlers:
+    - name: restart jenkins
+      systemd:
+        name: jenkins
+        state: restarted
