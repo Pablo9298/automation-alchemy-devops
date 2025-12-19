@@ -52,17 +52,19 @@
         group: devops
         mode: "0700"
 
-    # ✅ Берём публичный ключ, которым vagrant уже умеет логиниться, прямо с VM
+    # Берём публичный ключ, которым vagrant уже умеет логиниться, прямо с VM
     - name: Read vagrant authorized_keys
       slurp:
         src: /home/vagrant/.ssh/authorized_keys
       register: vagrant_authkeys
+      ignore_errors: yes
 
     - name: Add vagrant key(s) to devops authorized_keys
       authorized_key:
         user: devops
         key: "{{ vagrant_authkeys.content | b64decode }}"
         state: present
+      when: vagrant_authkeys is defined and vagrant_authkeys.content is defined
 
     - name: Configure SSH - disable password authentication
       lineinfile:
@@ -110,6 +112,7 @@
         regexp: '^umask'
         line: 'umask 022'
         state: present
+      ignore_errors: yes
 
     - name: Set umask in /etc/login.defs
       lineinfile:
@@ -189,8 +192,8 @@
       ignore_errors: yes
 
 
-- name: Install Docker on app and web servers
-  hosts: appserver,webservers
+- name: Install Docker (web/app/jenkins) and configure permissions
+  hosts: appserver,webservers,jenkinsservers
   become: yes
 
   tasks:
@@ -204,7 +207,7 @@
         repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
         state: present
 
-    - name: Install Docker
+    - name: Install Docker Engine and Compose plugin
       apt:
         name:
           - docker-ce
@@ -214,23 +217,27 @@
         state: present
         update_cache: yes
 
-    - name: Add devops to docker group
-      user:
-        name: devops
-        groups: docker
-        append: yes
-
     - name: Start and enable Docker
       systemd:
         name: docker
         state: started
         enabled: yes
 
-    - name: Allow Docker port in UFW
-      ufw:
-        rule: allow
-        port: "2375"
-        proto: tcp
+    - name: Add devops user to docker group
+      user:
+        name: devops
+        groups: docker
+        append: yes
+
+    - name: Add jenkins user to docker group (only on Jenkins VM)
+      user:
+        name: jenkins
+        groups: docker
+        append: yes
+      when: "'jenkinsservers' in group_names"
+
+    # НЕ открываем Docker TCP 2375 — не нужен и небезопасен.
+    # Если когда-то понадобится удалённый Docker API — обсудим отдельно.
 
 
 - name: Configure Load Balancer
@@ -285,7 +292,7 @@
       systemd:
         name: nginx
         state: restarted
-        enabled: yes
+       enabled: yes
 
 
 - name: Configure Web Servers
@@ -361,6 +368,12 @@
         name: jenkins
         state: started
         enabled: yes
+
+    - name: Restart Jenkins to apply docker group membership
+      systemd:
+        name: jenkins
+        state: restarted
+      ignore_errors: yes
 
     - name: Wait for Jenkins to start
       wait_for:
