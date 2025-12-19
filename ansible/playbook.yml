@@ -1,0 +1,380 @@
+---
+- name: Configure all servers
+  hosts: all
+  become: yes
+
+  tasks:
+    - name: Set timezone
+      timezone:
+        name: Europe/Tallinn
+
+    - name: Update apt cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Upgrade all packages
+      apt:
+        upgrade: dist
+        autoremove: yes
+        autoclean: yes
+
+    - name: Install common packages
+      apt:
+        name:
+          - vim
+          - curl
+          - wget
+          - git
+          - htop
+          - net-tools
+          - ufw
+          - ca-certificates
+          - gnupg
+          - lsb-release
+          - rsync
+        state: present
+
+    - name: Create devops user
+      user:
+        name: devops
+        shell: /bin/bash
+        groups: sudo
+        append: yes
+        create_home: yes
+        password: "{{ 'devops123' | password_hash('sha512') }}"
+
+    - name: Create .ssh directory for devops
+      file:
+        path: /home/devops/.ssh
+        state: directory
+        owner: devops
+        group: devops
+        mode: "0700"
+
+    # ✅ Берём публичный ключ, которым vagrant уже умеет логиниться, прямо с VM
+    - name: Read vagrant authorized_keys
+      slurp:
+        src: /home/vagrant/.ssh/authorized_keys
+      register: vagrant_authkeys
+
+    - name: Add vagrant key(s) to devops authorized_keys
+      authorized_key:
+        user: devops
+        key: "{{ vagrant_authkeys.content | b64decode }}"
+        state: present
+
+    - name: Configure SSH - disable password authentication
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PasswordAuthentication'
+        line: 'PasswordAuthentication no'
+        state: present
+      notify: restart ssh
+
+    - name: Configure SSH - disable root login
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PermitRootLogin'
+        line: 'PermitRootLogin no'
+        state: present
+      notify: restart ssh
+
+    - name: Configure SSH - enable pubkey authentication
+      lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PubkeyAuthentication'
+        line: 'PubkeyAuthentication yes'
+        state: present
+      notify: restart ssh
+
+    - name: Disable other users login (except devops and vagrant)
+      user:
+        name: "{{ item }}"
+        shell: /usr/sbin/nologin
+      loop:
+        - ubuntu
+        - nobody
+      ignore_errors: yes
+
+    - name: Set umask to 022 in /etc/profile
+      lineinfile:
+        path: /etc/profile
+        regexp: '^umask'
+        line: 'umask 022'
+        state: present
+
+    - name: Set umask in /etc/bash.bashrc
+      lineinfile:
+        path: /etc/bash.bashrc
+        regexp: '^umask'
+        line: 'umask 022'
+        state: present
+
+    - name: Set umask in /etc/login.defs
+      lineinfile:
+        path: /etc/login.defs
+        regexp: '^UMASK'
+        line: 'UMASK           022'
+        state: present
+
+    - name: Configure sudo for devops user
+      lineinfile:
+        path: /etc/sudoers.d/devops
+        line: 'devops ALL=(ALL:ALL) ALL'
+        state: present
+        create: yes
+        mode: "0440"
+        validate: 'visudo -cf %s'
+
+    - name: Ensure sudo requires password
+      lineinfile:
+        path: /etc/sudoers.d/devops
+        regexp: '^devops.*NOPASSWD'
+        state: absent
+        validate: 'visudo -cf %s'
+
+    - name: Configure UFW default policies
+      ufw:
+        direction: "{{ item.direction }}"
+        policy: "{{ item.policy }}"
+      loop:
+        - { direction: "incoming", policy: "deny" }
+        - { direction: "outgoing", policy: "allow" }
+
+    - name: Allow SSH
+      ufw:
+        rule: allow
+        port: "22"
+        proto: tcp
+
+    - name: Enable UFW
+      ufw:
+        state: enabled
+
+    - name: Set static IP configuration
+      copy:
+        dest: /etc/netplan/99-static-ip.yaml
+        content: |
+          network:
+            version: 2
+            ethernets:
+              eth1:
+                addresses:
+                  - {{ ansible_host }}/24
+        owner: root
+        group: root
+        mode: "0644"
+      notify: apply netplan
+
+    - name: Update /etc/hosts with all VMs
+      blockinfile:
+        path: /etc/hosts
+        block: |
+          192.168.56.10 loadbalancer lb
+          192.168.56.11 webserver1 web1
+          192.168.56.12 webserver2 web2
+          192.168.56.13 appserver app
+          192.168.56.14 jenkinsserver jenkins
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+
+  handlers:
+    - name: restart ssh
+      service:
+        name: ssh
+        state: restarted
+
+    - name: apply netplan
+      command: netplan apply
+      ignore_errors: yes
+
+
+- name: Install Docker on app and web servers
+  hosts: appserver,webservers
+  become: yes
+
+  tasks:
+    - name: Add Docker GPG key
+      apt_key:
+        url: https://download.docker.com/linux/ubuntu/gpg
+        state: present
+
+    - name: Add Docker repository
+      apt_repository:
+        repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+        state: present
+
+    - name: Install Docker
+      apt:
+        name:
+          - docker-ce
+          - docker-ce-cli
+          - containerd.io
+          - docker-compose-plugin
+        state: present
+        update_cache: yes
+
+    - name: Add devops to docker group
+      user:
+        name: devops
+        groups: docker
+        append: yes
+
+    - name: Start and enable Docker
+      systemd:
+        name: docker
+        state: started
+        enabled: yes
+
+    - name: Allow Docker port in UFW
+      ufw:
+        rule: allow
+        port: "2375"
+        proto: tcp
+
+
+- name: Configure Load Balancer
+  hosts: loadbalancer
+  become: yes
+
+  tasks:
+    - name: Install Nginx
+      apt:
+        name: nginx
+        state: present
+
+    - name: Remove default Nginx config
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+
+    - name: Create Nginx load balancer config
+      copy:
+        dest: /etc/nginx/sites-available/loadbalancer
+        content: |
+          upstream webservers {
+              server 192.168.56.11:80;
+              server 192.168.56.12:80;
+          }
+
+          server {
+              listen 80;
+              server_name loadbalancer;
+
+              location / {
+                  proxy_pass http://webservers;
+                  proxy_set_header Host $host;
+                  proxy_set_header X-Real-IP $remote_addr;
+                  proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+              }
+          }
+
+    - name: Enable load balancer config
+      file:
+        src: /etc/nginx/sites-available/loadbalancer
+        dest: /etc/nginx/sites-enabled/loadbalancer
+        state: link
+
+    - name: Allow HTTP in UFW
+      ufw:
+        rule: allow
+        port: "80"
+        proto: tcp
+
+    - name: Restart Nginx
+      systemd:
+        name: nginx
+        state: restarted
+        enabled: yes
+
+
+- name: Configure Web Servers
+  hosts: webservers
+  become: yes
+
+  tasks:
+    - name: Install Nginx
+      apt:
+        name: nginx
+        state: present
+
+    - name: Allow HTTP in UFW
+      ufw:
+        rule: allow
+        port: "80"
+        proto: tcp
+
+    - name: Start Nginx
+      systemd:
+        name: nginx
+        state: started
+        enabled: yes
+
+
+- name: Configure App Server
+  hosts: appserver
+  become: yes
+
+  tasks:
+    - name: Allow application port in UFW
+      ufw:
+        rule: allow
+        port: "3000"
+        proto: tcp
+
+
+- name: Install Jenkins
+  hosts: jenkinsservers
+  become: yes
+
+  tasks:
+    - name: Install Java (Jenkins requires modern Java)
+      apt:
+        name: openjdk-17-jre
+        state: present
+        update_cache: yes
+
+    - name: Add Jenkins GPG key
+      apt_key:
+        url: https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key
+        state: present
+
+    - name: Add Jenkins repository
+      apt_repository:
+        repo: "deb https://pkg.jenkins.io/debian-stable binary/"
+        state: present
+
+    - name: Install Jenkins
+      apt:
+        name: jenkins
+        state: present
+        update_cache: yes
+
+    - name: Allow Jenkins port in UFW
+      ufw:
+        rule: allow
+        port: "8080"
+        proto: tcp
+
+    - name: Start Jenkins
+      systemd:
+        name: jenkins
+        state: started
+        enabled: yes
+
+    - name: Wait for Jenkins to start
+      wait_for:
+        port: 8080
+        delay: 10
+        timeout: 60
+
+    - name: Get Jenkins initial password
+      slurp:
+        src: /var/lib/jenkins/secrets/initialAdminPassword
+      register: jenkins_password
+      ignore_errors: yes
+
+    - name: Display Jenkins initial password
+      debug:
+        msg: "Jenkins initial password: {{ jenkins_password.content | b64decode }}"
+      when: jenkins_password is succeeded

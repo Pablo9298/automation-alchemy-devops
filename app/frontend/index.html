@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Infrastructure Metrics Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 30px;
+            text-align: center;
+        }
+
+        h1 {
+            color: #667eea;
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+
+        .subtitle {
+            color: #666;
+            font-size: 1.1em;
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .metric-card {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            transition: transform 0.3s ease;
+        }
+
+        .metric-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .metric-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .metric-icon {
+            font-size: 2em;
+            margin-right: 15px;
+        }
+
+        .metric-title {
+            font-size: 1.2em;
+            color: #333;
+            font-weight: 600;
+        }
+
+        .metric-value {
+            font-size: 2.5em;
+            font-weight: bold;
+            color: #667eea;
+            margin: 10px 0;
+        }
+
+        .metric-details {
+            color: #666;
+            font-size: 0.9em;
+            line-height: 1.6;
+        }
+
+        .metric-details div {
+            margin: 5px 0;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #f0f0f0;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            transition: width 0.5s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 0.8em;
+            font-weight: bold;
+        }
+
+        .server-info {
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+        }
+
+        .server-badge {
+            display: inline-block;
+            padding: 8px 15px;
+            background: #667eea;
+            color: white;
+            border-radius: 20px;
+            margin: 5px;
+            font-size: 0.9em;
+        }
+
+        .status {
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #4CAF50;
+            animation: pulse 2s infinite;
+            margin-right: 8px;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+
+        .loading {
+            text-align: center;
+            padding: 50px;
+            color: white;
+            font-size: 1.5em;
+        }
+
+        .error {
+            background: #f44336;
+            color: white;
+            padding: 20px;
+            border-radius: 15px;
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .refresh-btn {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 12px 30px;
+            border-radius: 25px;
+            font-size: 1em;
+            cursor: pointer;
+            transition: background 0.3s ease;
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .refresh-btn:hover {
+            background: #764ba2;
+        }
+
+        .last-updated {
+            color: #666;
+            font-size: 0.9em;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🔮 Infrastructure Metrics Dashboard</h1>
+            <p class="subtitle">Real-time monitoring of server infrastructure</p>
+            <div style="margin-top: 20px;">
+                <button class="refresh-btn" onclick="fetchMetrics()">🔄 Refresh Metrics</button>
+            </div>
+            <div class="last-updated" id="lastUpdated"></div>
+        </header>
+
+        <div id="loading" class="loading">
+            Loading metrics...
+        </div>
+
+        <div id="error" class="error" style="display: none;"></div>
+
+        <div id="metricsContainer" style="display: none;">
+            <div class="metrics-grid">
+                <!-- CPU Card -->
+                <div class="metric-card">
+                    <div class="metric-header">
+                        <div class="metric-icon">💻</div>
+                        <div class="metric-title">CPU Usage</div>
+                    </div>
+                    <div class="metric-value" id="cpuUsage">--</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="cpuProgress" style="width: 0%"></div>
+                    </div>
+                    <div class="metric-details">
+                        <div>Cores: <strong id="cpuCores">--</strong></div>
+                        <div>Model: <strong id="cpuModel">--</strong></div>
+                    </div>
+                </div>
+
+                <!-- Memory Card -->
+                <div class="metric-card">
+                    <div class="metric-header">
+                        <div class="metric-icon">🧠</div>
+                        <div class="metric-title">Memory Usage</div>
+                    </div>
+                    <div class="metric-value" id="memoryUsage">--</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="memoryProgress" style="width: 0%"></div>
+                    </div>
+                    <div class="metric-details">
+                        <div>Total: <strong id="memoryTotal">--</strong></div>
+                        <div>Used: <strong id="memoryUsed">--</strong></div>
+                        <div>Free: <strong id="memoryFree">--</strong></div>
+                    </div>
+                </div>
+
+                <!-- Disk Card -->
+                <div class="metric-card">
+                    <div class="metric-header">
+                        <div class="metric-icon">💾</div>
+                        <div class="metric-title">Disk Usage</div>
+                    </div>
+                    <div class="metric-value" id="diskUsage">--</div>
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="diskProgress" style="width: 0%"></div>
+                    </div>
+                    <div class="metric-details">
+                        <div>Total: <strong id="diskTotal">--</strong></div>
+                        <div>Used: <strong id="diskUsed">--</strong></div>
+                        <div>Available: <strong id="diskAvailable">--</strong></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Server Info -->
+            <div class="server-info">
+                <h2 style="margin-bottom: 20px; color: #333;">
+                    <span class="status"></span>
+                    Server Information
+                </h2>
+                <div>
+                    <span class="server-badge">🖥️ Hostname: <strong id="hostname">--</strong></span>
+                    <span class="server-badge">🐧 Platform: <strong id="platform">--</strong></span>
+                    <span class="server-badge">⏱️ Uptime: <strong id="uptime">--</strong></span>
+                    <span class="server-badge">📡 Server: <strong id="serverName">--</strong></span>
+                </div>
+                <div style="margin-top: 20px;">
+                    <h3 style="color: #333; margin-bottom: 10px;">Network Interfaces:</h3>
+                    <div id="networkInterfaces"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://192.168.56.13:3000/api/metrics';
+
+        async function fetchMetrics() {
+            const loading = document.getElementById('loading');
+            const error = document.getElementById('error');
+            const container = document.getElementById('metricsContainer');
+
+            loading.style.display = 'block';
+            error.style.display = 'none';
+            container.style.display = 'none';
+
+            try {
+                const response = await fetch(API_URL);
+                if (!response.ok) throw new Error('Failed to fetch metrics');
+                
+                const data = await response.json();
+                updateUI(data);
+                
+                loading.style.display = 'none';
+                container.style.display = 'block';
+            } catch (err) {
+                loading.style.display = 'none';
+                error.style.display = 'block';
+                error.textContent = '❌ Error: ' + err.message + '. Make sure backend is running on 192.168.56.13:3000';
+            }
+        }
+
+        function updateUI(data) {
+            // CPU
+            document.getElementById('cpuUsage').textContent = data.cpu.usage + '%';
+            document.getElementById('cpuProgress').style.width = data.cpu.usage + '%';
+            document.getElementById('cpuProgress').textContent = data.cpu.usage + '%';
+            document.getElementById('cpuCores').textContent = data.cpu.cores;
+            document.getElementById('cpuModel').textContent = data.cpu.model;
+
+            // Memory
+            document.getElementById('memoryUsage').textContent = data.memory.percentage + '%';
+            document.getElementById('memoryProgress').style.width = data.memory.percentage + '%';
+            document.getElementById('memoryProgress').textContent = data.memory.percentage + '%';
+            document.getElementById('memoryTotal').textContent = data.memory.total;
+            document.getElementById('memoryUsed').textContent = data.memory.used;
+            document.getElementById('memoryFree').textContent = data.memory.free;
+
+            // Disk
+            const diskPercent = parseFloat(data.disk.percentage);
+            document.getElementById('diskUsage').textContent = data.disk.percentage;
+            document.getElementById('diskProgress').style.width = diskPercent + '%';
+            document.getElementById('diskProgress').textContent = data.disk.percentage;
+            document.getElementById('diskTotal').textContent = data.disk.total;
+            document.getElementById('diskUsed').textContent = data.disk.used;
+            document.getElementById('diskAvailable').textContent = data.disk.available;
+
+            // Server Info
+            document.getElementById('hostname').textContent = data.hostname;
+            document.getElementById('platform').textContent = data.platform;
+            document.getElementById('uptime').textContent = data.uptime;
+            document.getElementById('serverName').textContent = data.serverName;
+
+            // Network
+            const networkDiv = document.getElementById('networkInterfaces');
+            networkDiv.innerHTML = data.network.map(iface => 
+                `<span class="server-badge">🌐 ${iface.interface}: ${iface.ip}</span>`
+            ).join('');
+
+            // Last updated
+            document.getElementById('lastUpdated').textContent = 
+                'Last updated: ' + new Date(data.timestamp).toLocaleString();
+        }
+
+        // Initial fetch
+        fetchMetrics();
+
+        // Auto-refresh every 5 seconds
+        setInterval(fetchMetrics, 5000);
+    </script>
+</body>
+</html>

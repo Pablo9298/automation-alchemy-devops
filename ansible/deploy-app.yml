@@ -1,0 +1,130 @@
+---
+#############################
+# Deploy Backend (App Server)
+#############################
+- name: Deploy Backend Application
+  hosts: appserver
+  become: yes
+
+  tasks:
+    - name: Ensure backend directory exists
+      file:
+        path: /opt/app/backend
+        state: directory
+        owner: devops
+        group: devops
+        mode: "0755"
+
+    - name: Copy backend package.json
+      copy:
+        src: ../app/backend/package.json
+        dest: /opt/app/backend/package.json
+        mode: "0644"
+
+    - name: Copy backend Dockerfile
+      copy:
+        src: ../app/backend/Dockerfile
+        dest: /opt/app/backend/Dockerfile
+        mode: "0644"
+
+    - name: Copy backend server.js
+      copy:
+        src: ../app/backend/server.js
+        dest: /opt/app/backend/server.js
+        mode: "0644"
+
+    - name: Stop old backend container (if exists)
+      community.docker.docker_container:
+        name: backend
+        state: absent
+      ignore_errors: yes
+
+    - name: Build backend Docker image (force rebuild)
+      community.docker.docker_image:
+        name: infrastructure-backend
+        tag: latest
+        source: build
+        force_source: true
+        build:
+          path: /opt/app/backend
+          nocache: true
+
+    - name: Run backend container
+      community.docker.docker_container:
+        name: backend
+        image: infrastructure-backend:latest
+        state: started
+        restart_policy: always
+        ports:
+          - "3000:3000"
+        env:
+          SERVER_NAME: appserver
+
+    - name: Wait for backend health endpoint
+      uri:
+        url: http://127.0.0.1:3000/health
+        status_code: 200
+      register: health
+      until: health.status == 200
+      retries: 20
+      delay: 2
+
+
+#############################
+# Deploy Frontend (Web Servers)
+#############################
+- name: Deploy Frontend Application
+  hosts: webservers
+  become: yes
+
+  tasks:
+    - name: Copy dashboard index.html
+      copy:
+        src: ../app/frontend/index.html
+        dest: /usr/share/nginx/html/index.html
+        mode: "0644"
+
+    - name: Copy nginx dashboard config
+      copy:
+        src: ../app/frontend/nginx.conf
+        dest: /etc/nginx/sites-available/dashboard
+        mode: "0644"
+
+    - name: Disable default nginx site
+      file:
+        path: /etc/nginx/sites-enabled/default
+        state: absent
+
+    - name: Enable dashboard site
+      file:
+        src: /etc/nginx/sites-available/dashboard
+        dest: /etc/nginx/sites-enabled/dashboard
+        state: link
+
+    - name: Test nginx config
+      command: nginx -t
+      changed_when: false
+
+    - name: Restart nginx
+      systemd:
+        name: nginx
+        state: restarted
+        enabled: yes
+
+
+#############################
+# Verify Load Balancer
+#############################
+- name: Verify Load Balancer
+  hosts: loadbalancer
+  become: yes
+
+  tasks:
+    - name: Test load balancer nginx config
+      command: nginx -t
+      changed_when: false
+
+    - name: Reload nginx
+      systemd:
+        name: nginx
+        state: reloaded

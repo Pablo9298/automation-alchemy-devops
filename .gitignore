@@ -1,0 +1,21 @@
+# Vagrant
+.vagrant/
+.vagrant-ssh-config
+
+# Logs & temp
+*.log
+*.tar
+
+# Env files
+.env
+.env.*
+
+# SSH keys
+id_rsa
+id_rsa.pub
+id_ed25519
+*.pem
+*.key
+
+# Node
+node_modules/
