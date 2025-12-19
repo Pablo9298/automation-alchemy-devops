@@ -1,4 +1,7 @@
 ---
+# =========================================================
+# 1) BASE HARDENING / USERS / NETWORK / UFW  (ALL HOSTS)
+# =========================================================
 - name: Configure all servers
   hosts: all
   become: yes
@@ -13,6 +16,7 @@
         update_cache: yes
         cache_valid_time: 3600
 
+    # ⚠️ Самый долгий шаг. Если хочешь ускорить — закомментируй.
     - name: Upgrade all packages
       apt:
         upgrade: dist
@@ -112,7 +116,6 @@
         regexp: '^umask'
         line: 'umask 022'
         state: present
-      ignore_errors: yes
 
     - name: Set umask in /etc/login.defs
       lineinfile:
@@ -192,6 +195,9 @@
       ignore_errors: yes
 
 
+# =========================================================
+# 2) DOCKER (WEB + APP + JENKINS)
+# =========================================================
 - name: Install Docker (web/app/jenkins) and configure permissions
   hosts: appserver,webservers,jenkinsservers
   become: yes
@@ -236,10 +242,10 @@
         append: yes
       when: "'jenkinsservers' in group_names"
 
-    # НЕ открываем Docker TCP 2375 — не нужен и небезопасен.
-    # Если когда-то понадобится удалённый Docker API — обсудим отдельно.
 
-
+# =========================================================
+# 3) LOAD BALANCER (NGINX)
+# =========================================================
 - name: Configure Load Balancer
   hosts: loadbalancer
   become: yes
@@ -295,6 +301,9 @@
         enabled: yes
 
 
+# =========================================================
+# 4) WEB SERVERS (NGINX)
+# =========================================================
 - name: Configure Web Servers
   hosts: webservers
   become: yes
@@ -318,6 +327,9 @@
         enabled: yes
 
 
+# =========================================================
+# 5) APP SERVER (UFW PORT)
+# =========================================================
 - name: Configure App Server
   hosts: appserver
   become: yes
@@ -330,9 +342,23 @@
         proto: tcp
 
 
-- name: Install Jenkins
+# =========================================================
+# 6) JENKINS (JCasC + Plugin Manager + Seed Job)
+# =========================================================
+- name: Install Jenkins (JCasC + plugins + seed job, no UI)
   hosts: jenkinsservers
   become: yes
+
+  vars:
+    jenkins_home: "/var/lib/jenkins"
+    jcasc_dir: "/var/lib/jenkins/casc"
+    jcasc_file: "/var/lib/jenkins/casc/jcasc.yml"
+    plugins_txt: "/var/lib/jenkins/plugins.txt"
+    plugin_manager_jar: "/usr/local/bin/jenkins-plugin-manager.jar"
+    seed_job_name: "seed-job"
+    seed_job_dir: "/var/lib/jenkins/jobs/seed-job"
+    seed_job_config: "/var/lib/jenkins/jobs/seed-job/config.xml"
+    dsl_script_dest: "/var/lib/jenkins/jobs.groovy"
 
   tasks:
     - name: Install Java (Jenkins requires modern Java)
@@ -363,118 +389,104 @@
         port: "8080"
         proto: tcp
 
-    - name: Disable Jenkins setup wizard (JAVA_ARGS)
-      lineinfile:
-        path: /etc/default/jenkins
-        regexp: '^JAVA_ARGS='
-        line: 'JAVA_ARGS="-Djava.awt.headless=true -Djenkins.install.runSetupWizard=false"'
-
-    - name: Start Jenkins
-      systemd:
-        name: jenkins
-        state: started
-        enabled: yes
-
-    - name: Restart Jenkins to apply docker group membership
-      systemd:
-        name: jenkins
-        state: restarted
-      ignore_errors: yes
-
-    - name: Wait for Jenkins to start
-      wait_for:
-        port: 8080
-        delay: 10
-        timeout: 60
-
-    - name: Ensure curl is installed (for Jenkins CLI)
+    - name: Ensure curl is installed
       apt:
         name: curl
         state: present
 
-    - name: Install Jenkins plugins (pipeline, git, job-dsl)
-      shell: |
-        jenkins-plugin-cli --plugins "workflow-aggregator git job-dsl"
-      args:
-        creates: /var/lib/jenkins/plugins/job-dsl.jpi
-      notify: restart jenkins
+    # --- JCasC files ---
+    - name: Create JCasC directory
+      file:
+        path: "{{ jcasc_dir }}"
+        state: directory
+        owner: jenkins
+        group: jenkins
+        mode: "0755"
 
-    - name: Copy Job DSL script to Jenkins
+    - name: Copy JCasC config
+      copy:
+        src: ../jenkins/jcasc.yml
+        dest: "{{ jcasc_file }}"
+        owner: jenkins
+        group: jenkins
+        mode: "0644"
+
+    - name: Copy plugins.txt
+      copy:
+        src: ../jenkins/plugins.txt
+        dest: "{{ plugins_txt }}"
+        owner: jenkins
+        group: jenkins
+        mode: "0644"
+
+    - name: Copy Job DSL script (jobs.groovy)
       copy:
         src: ../jenkins/jobs.groovy
-        dest: /var/lib/jenkins/jobs.groovy
+        dest: "{{ dsl_script_dest }}"
         owner: jenkins
         group: jenkins
         mode: "0644"
 
-    - name: Download Jenkins CLI jar
-      get_url:
-        url: "http://localhost:8080/jnlpJars/jenkins-cli.jar"
-        dest: /var/lib/jenkins/jenkins-cli.jar
-        mode: "0644"
-      register: cli_jar
-      retries: 10
-      delay: 3
-      until: cli_jar is succeeded
+    - name: Create seed job directory
+      file:
+        path: "{{ seed_job_dir }}"
+        state: directory
+        owner: jenkins
+        group: jenkins
+        mode: "0755"
 
-    - name: Create seed job config.xml for Job DSL
+    - name: Copy seed-job.xml to Jenkins job config.xml
       copy:
-        dest: /var/lib/jenkins/seed-job-config.xml
+        src: ../jenkins/seed-job.xml
+        dest: "{{ seed_job_config }}"
         owner: jenkins
         group: jenkins
         mode: "0644"
-        content: |
-          <?xml version='1.1' encoding='UTF-8'?>
-          <project>
-            <actions/>
-            <description>Seed job to create pipeline jobs from Job DSL</description>
-            <keepDependencies>false</keepDependencies>
-            <properties/>
-            <scm class="hudson.scm.NullSCM"/>
-            <canRoam>true</canRoam>
-            <disabled>false</disabled>
-            <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
-            <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
-            <triggers/>
-            <concurrentBuild>false</concurrentBuild>
-            <builders>
-              <javaposse.jobdsl.plugin.ExecuteDslScripts plugin="job-dsl@1.87">
-                <scriptText></scriptText>
-                <targets>/var/lib/jenkins/jobs.groovy</targets>
-                <usingScriptText>false</usingScriptText>
-                <ignoreExisting>false</ignoreExisting>
-                <removedJobAction>IGNORE</removedJobAction>
-                <removedViewAction>IGNORE</removedViewAction>
-                <lookupStrategy>JENKINS_ROOT</lookupStrategy>
-                <additionalClasspath></additionalClasspath>
-              </javaposse.jobdsl.plugin.ExecuteDslScripts>
-            </builders>
-            <publishers/>
-            <buildWrappers/>
-          </project>
 
-    - name: Create seed job via Jenkins CLI (no auth, wizard disabled)
+    # --- Disable setup wizard + enable JCasC ---
+    - name: Disable Jenkins setup wizard and enable JCasC
+      lineinfile:
+        path: /etc/default/jenkins
+        regexp: '^JAVA_ARGS='
+        line: 'JAVA_ARGS="-Djava.awt.headless=true -Djenkins.install.runSetupWizard=false -Dcasc.jenkins.config={{ jcasc_file }}"'
+
+    # --- Install plugins using plugin manager (no CLI, no UI) ---
+    - name: Download Jenkins Plugin Manager
+      get_url:
+        url: "https://github.com/jenkinsci/plugin-installation-manager-tool/releases/latest/download/jenkins-plugin-manager.jar"
+        dest: "{{ plugin_manager_jar }}"
+        mode: "0755"
+      register: pm_dl
+      retries: 5
+      delay: 3
+      until: pm_dl is succeeded
+
+    - name: Install Jenkins plugins from plugins.txt
       shell: |
-        java -jar /var/lib/jenkins/jenkins-cli.jar -s http://localhost:8080 create-job seed-job < /var/lib/jenkins/seed-job-config.xml || true
+        java -jar {{ plugin_manager_jar }} \
+          --war /usr/share/java/jenkins.war \
+          --plugin-file {{ plugins_txt }} \
+          --plugin-download-directory {{ jenkins_home }}/plugins
+      args:
+        creates: "{{ jenkins_home }}/plugins/configuration-as-code.jpi"
+      register: pm_install
 
-    - name: Run seed job to generate pipeline job
-      shell: |
-        java -jar /var/lib/jenkins/jenkins-cli.jar -s http://localhost:8080 build seed-job -s -v
+    - name: Ensure correct ownership of Jenkins home
+      file:
+        path: "{{ jenkins_home }}"
+        state: directory
+        owner: jenkins
+        group: jenkins
+        recurse: yes
 
-
-    - name: Get Jenkins initial password
-      slurp:
-        src: /var/lib/jenkins/secrets/initialAdminPassword
-      register: jenkins_password
-      ignore_errors: yes
-
-    - name: Display Jenkins initial password
-      debug:
-        msg: "Jenkins initial password: {{ jenkins_password.content | b64decode }}"
-      when: jenkins_password is succeeded
-
-  handlers:
-    - name: restart jenkins
+    - name: Restart and enable Jenkins
       systemd:
         name: jenkins
         state: restarted
+        enabled: yes
+
+    - name: Wait for Jenkins to be ready
+      wait_for:
+        port: 8080
+        delay: 5
+        timeout: 240
