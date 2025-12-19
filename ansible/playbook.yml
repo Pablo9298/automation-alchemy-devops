@@ -164,7 +164,7 @@
             ethernets:
               eth1:
                 addresses:
-                  - {{ ansible_host }}/24
+                  - {{ vm_ip }}/24
         owner: root
         group: root
         mode: "0644"
@@ -292,7 +292,7 @@
       systemd:
         name: nginx
         state: restarted
-       enabled: yes
+        enabled: yes
 
 
 - name: Configure Web Servers
