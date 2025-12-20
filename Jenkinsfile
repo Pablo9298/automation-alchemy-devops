@@ -8,13 +8,6 @@ pipeline {
     WEB_SERVER_2 = '192.168.56.12'
   }
 
-stage('Debug Jenkinsfile version') {
-  steps {
-    sh 'echo "Jenkinsfile loaded ✅"; sed -n "1,40p" Jenkinsfile || true'
-  }
-}
-
-
   stages {
     stage('Checkout') {
       steps {
@@ -22,6 +15,13 @@ stage('Debug Jenkinsfile version') {
         checkout scm
       }
     }
+
+stage('Debug Jenkinsfile version') {
+  steps {
+    sh 'echo "Jenkinsfile loaded ✅"; sed -n "1,40p" Jenkinsfile || true'
+  }
+}
+
 
     stage('Build Backend') {
       steps {
