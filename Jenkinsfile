@@ -1,150 +1,133 @@
 pipeline {
-    agent any
-    
-    environment {
-        BACKEND_IMAGE = 'infrastructure-backend'
-        FRONTEND_IMAGE = 'infrastructure-frontend'
-        APP_SERVER = '192.168.56.13'
-        WEB_SERVER_1 = '192.168.56.11'
-        WEB_SERVER_2 = '192.168.56.12'
+  agent any
+
+  environment {
+    BACKEND_IMAGE = 'infrastructure-backend'
+    APP_SERVER   = '192.168.56.13'
+    WEB_SERVER_1 = '192.168.56.11'
+    WEB_SERVER_2 = '192.168.56.12'
+  }
+
+  stages {
+    stage('Checkout') {
+      steps {
+        echo 'Checking out source code...'
+        checkout scm
+      }
     }
-    
-    stages {
-        stage('Checkout') {
-            steps {
-                echo 'Checking out source code...'
-                checkout scm
-            }
+
+    stage('Build Backend') {
+      steps {
+        echo 'Building backend Docker image...'
+        dir('app/backend') {
+          sh 'docker build -t ${BACKEND_IMAGE}:${BUILD_NUMBER} .'
+          sh 'docker tag ${BACKEND_IMAGE}:${BUILD_NUMBER} ${BACKEND_IMAGE}:latest'
         }
-        
-        stage('Build Backend') {
-            steps {
-                echo 'Building backend Docker image...'
-                dir('app/backend') {
-                    sh 'docker build -t ${BACKEND_IMAGE}:${BUILD_NUMBER} .'
-                    sh 'docker tag ${BACKEND_IMAGE}:${BUILD_NUMBER} ${BACKEND_IMAGE}:latest'
-                }
-            }
-        }
-        
-        stage('Build Frontend') {
-            steps {
-                echo 'Building frontend Docker image...'
-                dir('app/frontend') {
-                    sh 'docker build -t ${FRONTEND_IMAGE}:${BUILD_NUMBER} .'
-                    sh 'docker tag ${FRONTEND_IMAGE}:${BUILD_NUMBER} ${FRONTEND_IMAGE}:latest'
-                }
-            }
-        }
-        
-        stage('Test Backend') {
-            steps {
-                echo 'Running backend tests...'
-                sh '''
-                    # Run a test container
-                    docker run -d --name backend-test -p 3001:3000 ${BACKEND_IMAGE}:latest
-                    
-                    # Wait for container to start
-                    sleep 5
-                    
-                    # Test health endpoint
-                    curl -f http://localhost:3001/health || exit 1
-                    
-                    # Test metrics endpoint
-                    curl -f http://localhost:3001/api/metrics || exit 1
-                    
-                    # Cleanup
-                    docker stop backend-test
-                    docker rm backend-test
-                '''
-            }
-        }
-        
-        stage('Deploy Backend') {
-            steps {
-                echo 'Deploying backend to app server...'
-                sh '''
-                    # Save image as tar
-                    docker save ${BACKEND_IMAGE}:latest -o backend.tar
-                    
-                    # Copy to app server
-                    scp -o StrictHostKeyChecking=no backend.tar devops@${APP_SERVER}:/tmp/
-                    
-                    # Load and run on app server
-                    ssh -o StrictHostKeyChecking=no devops@${APP_SERVER} '
-                        docker load -i /tmp/backend.tar
-                        docker stop backend || true
-                        docker rm backend || true
-                        docker run -d --name backend --restart always -p 3000:3000 ${BACKEND_IMAGE}:latest
-                        rm /tmp/backend.tar
-                    '
-                    
-                    rm backend.tar
-                '''
-            }
-        }
-        
-        stage('Deploy Frontend') {
-            steps {
-                echo 'Deploying frontend to web servers...'
-                sh '''
-                    # Save image as tar
-                    docker save ${FRONTEND_IMAGE}:latest -o frontend.tar
-                    
-                    # Deploy to web server 1
-                    scp -o StrictHostKeyChecking=no frontend.tar devops@${WEB_SERVER_1}:/tmp/
-                    ssh -o StrictHostKeyChecking=no devops@${WEB_SERVER_1} '
-                        docker load -i /tmp/frontend.tar
-                        docker stop frontend || true
-                        docker rm frontend || true
-                        docker run -d --name frontend --restart always -p 80:80 ${FRONTEND_IMAGE}:latest
-                        rm /tmp/frontend.tar
-                    '
-                    
-                    # Deploy to web server 2
-                    scp -o StrictHostKeyChecking=no frontend.tar devops@${WEB_SERVER_2}:/tmp/
-                    ssh -o StrictHostKeyChecking=no devops@${WEB_SERVER_2} '
-                        docker load -i /tmp/frontend.tar
-                        docker stop frontend || true
-                        docker rm frontend || true
-                        docker run -d --name frontend --restart always -p 80:80 ${FRONTEND_IMAGE}:latest
-                        rm /tmp/frontend.tar
-                    '
-                    
-                    rm frontend.tar
-                '''
-            }
-        }
-        
-        stage('Verify Deployment') {
-            steps {
-                echo 'Verifying deployment...'
-                sh '''
-                    # Check backend
-                    curl -f http://${APP_SERVER}:3000/health || exit 1
-                    
-                    # Check web servers
-                    curl -f http://${WEB_SERVER_1} || exit 1
-                    curl -f http://${WEB_SERVER_2} || exit 1
-                    
-                    echo "All services are healthy!"
-                '''
-            }
-        }
+      }
     }
-    
-    post {
-        success {
-            echo 'Pipeline completed successfully! ✅'
-            // Here you can add Slack/Email notifications
-        }
-        failure {
-            echo 'Pipeline failed! ❌'
-            // Here you can add Slack/Email notifications
-        }
-        always {
-            echo 'Cleaning up...'
-            sh 'docker image prune -f'
-        }
+
+    stage('Test Backend') {
+      steps {
+        echo 'Running backend smoke tests...'
+        sh '''
+          set -e
+
+          docker rm -f backend-test >/dev/null 2>&1 || true
+          docker run -d --name backend-test -p 3001:3000 ${BACKEND_IMAGE}:latest
+
+          sleep 3
+          curl -fsS http://localhost:3001/health
+          curl -fsS http://localhost:3001/api/metrics > /dev/null
+
+          docker rm -f backend-test
+        '''
+      }
     }
+
+    stage('Deploy Backend') {
+      steps {
+        echo 'Deploying backend to app server...'
+        sh '''
+          set -e
+
+          docker save ${BACKEND_IMAGE}:latest -o backend.tar
+
+          scp -o StrictHostKeyChecking=no backend.tar devops@${APP_SERVER}:/tmp/backend.tar
+
+          ssh -o StrictHostKeyChecking=no devops@${APP_SERVER} '
+            set -e
+            docker load -i /tmp/backend.tar
+            docker rm -f backend >/dev/null 2>&1 || true
+            docker run -d --name backend --restart always -p 3000:3000 ${BACKEND_IMAGE}:latest
+            rm -f /tmp/backend.tar
+          '
+
+          rm -f backend.tar
+        '''
+      }
+    }
+
+    stage('Deploy Frontend (static + nginx reload)') {
+      steps {
+        echo 'Deploying frontend static files to web servers...'
+        sh '''
+          set -e
+
+          # web1
+          scp -o StrictHostKeyChecking=no app/frontend/index.html devops@${WEB_SERVER_1}:/tmp/index.html
+          scp -o StrictHostKeyChecking=no app/frontend/nginx.conf  devops@${WEB_SERVER_1}:/tmp/dashboard.conf
+          ssh -o StrictHostKeyChecking=no devops@${WEB_SERVER_1} '
+            set -e
+            sudo install -m 0644 /tmp/index.html /var/www/html/index.html
+            sudo install -m 0644 /tmp/dashboard.conf /etc/nginx/sites-available/dashboard
+            sudo ln -sf /etc/nginx/sites-available/dashboard /etc/nginx/sites-enabled/dashboard
+            sudo rm -f /etc/nginx/sites-enabled/default || true
+            sudo nginx -t
+            sudo systemctl reload nginx
+          '
+
+          # web2
+          scp -o StrictHostKeyChecking=no app/frontend/index.html devops@${WEB_SERVER_2}:/tmp/index.html
+          scp -o StrictHostKeyChecking=no app/frontend/nginx.conf  devops@${WEB_SERVER_2}:/tmp/dashboard.conf
+          ssh -o StrictHostKeyChecking=no devops@${WEB_SERVER_2} '
+            set -e
+            sudo install -m 0644 /tmp/index.html /var/www/html/index.html
+            sudo install -m 0644 /tmp/dashboard.conf /etc/nginx/sites-available/dashboard
+            sudo ln -sf /etc/nginx/sites-available/dashboard /etc/nginx/sites-enabled/dashboard
+            sudo rm -f /etc/nginx/sites-enabled/default || true
+            sudo nginx -t
+            sudo systemctl reload nginx
+          '
+        '''
+      }
+    }
+
+    stage('Verify Deployment') {
+      steps {
+        echo 'Verifying deployment...'
+        sh '''
+          set -e
+
+          curl -fsS http://${APP_SERVER}:3000/health
+          curl -fsS http://${WEB_SERVER_1} > /dev/null
+          curl -fsS http://${WEB_SERVER_2} > /dev/null
+
+          echo "All services are healthy ✅"
+        '''
+      }
+    }
+  }
+
+  post {
+    always {
+      echo 'Cleaning up...'
+      sh 'docker image prune -f || true'
+    }
+    success {
+      echo 'Pipeline completed successfully! ✅'
+    }
+    failure {
+      echo 'Pipeline failed! ❌'
+    }
+  }
 }
