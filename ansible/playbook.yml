@@ -22,6 +22,7 @@
         upgrade: dist
         autoremove: yes
         autoclean: yes
+      tags: [slow]
 
     - name: Install common packages
       apt:
@@ -354,7 +355,9 @@
     jcasc_dir: "/var/lib/jenkins/casc"
     jcasc_file: "/var/lib/jenkins/casc/jcasc.yml"
     plugins_txt: "/var/lib/jenkins/plugins.txt"
-    plugin_manager_jar: "/usr/local/bin/jenkins-plugin-manager.jar"
+    plugin_manager_version: "2.13.2"
+    plugin_manager_jar: "/usr/local/bin/jenkins-plugin-manager-{{ plugin_manager_version }}.jar"
+    plugin_manager_url: "https://github.com/jenkinsci/plugin-installation-manager-tool/releases/download/{{ plugin_manager_version }}/jenkins-plugin-manager-{{ plugin_manager_version }}.jar"
     seed_job_name: "seed-job"
     seed_job_dir: "/var/lib/jenkins/jobs/seed-job"
     seed_job_config: "/var/lib/jenkins/jobs/seed-job/config.xml"
@@ -453,7 +456,7 @@
     # --- Install plugins using plugin manager (no CLI, no UI) ---
     - name: Download Jenkins Plugin Manager
       get_url:
-        url: "https://github.com/jenkinsci/plugin-installation-manager-tool/releases/latest/download/jenkins-plugin-manager.jar"
+        url: "{{ plugin_manager_url }}"
         dest: "{{ plugin_manager_jar }}"
         mode: "0755"
       register: pm_dl
