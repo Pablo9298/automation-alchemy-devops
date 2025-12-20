@@ -8,6 +8,13 @@ pipeline {
     WEB_SERVER_2 = '192.168.56.12'
   }
 
+stage('Debug Jenkinsfile version') {
+  steps {
+    sh 'echo "Jenkinsfile loaded ✅"; sed -n "1,40p" Jenkinsfile || true'
+  }
+}
+
+
   stages {
     stage('Checkout') {
       steps {
@@ -47,23 +54,24 @@ pipeline {
     stage('Deploy Backend') {
       steps {
         echo 'Deploying backend to app server...'
-        sh '''
+        sh """
           set -e
+	  IMAGE="${BACKEND_IMAGE}:latest"
 
-          docker save ${BACKEND_IMAGE}:latest -o backend.tar
+          docker save "\$IMAGE" -o backend.tar
 
           scp -o StrictHostKeyChecking=no backend.tar devops@${APP_SERVER}:/tmp/backend.tar
 
-          ssh -o StrictHostKeyChecking=no devops@${APP_SERVER} '
+          ssh -o StrictHostKeyChecking=no devops@${APP_SERVER} "
             set -e
             docker load -i /tmp/backend.tar
             docker rm -f backend >/dev/null 2>&1 || true
-            docker run -d --name backend --restart always -p 3000:3000 ${BACKEND_IMAGE}:latest
+            docker run -d --name backend --restart always -p 3000:3000 \$IMAGE
             rm -f /tmp/backend.tar
-          '
+          "
 
           rm -f backend.tar
-        '''
+        """
       }
     }
 
