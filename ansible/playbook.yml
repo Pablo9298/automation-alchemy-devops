@@ -327,6 +327,15 @@
         state: started
         enabled: yes
 
+    - name: Allow devops to manage nginx without password
+      copy:
+        dest: /etc/sudoers.d/devops-nginx
+        content: |
+          devops ALL=(root) NOPASSWD: /usr/bin/install, /usr/sbin/nginx, /usr/bin/systemctl reload nginx, /usr/bin/systemctl restart nginx, /bin/ln, /bin/rm
+        owner: root
+        group: root
+        mode: "0440"
+
 
 # =========================================================
 # 5) APP SERVER (UFW PORT)
