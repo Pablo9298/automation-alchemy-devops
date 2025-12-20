@@ -9,6 +9,7 @@ pipeline {
   }
 
   stages {
+
     stage('Checkout') {
       steps {
         echo 'Checking out source code...'
@@ -16,12 +17,11 @@ pipeline {
       }
     }
 
-stage('Debug Jenkinsfile version') {
-  steps {
-    sh 'echo "Jenkinsfile loaded ✅"; sed -n "1,40p" Jenkinsfile || true'
-  }
-}
-
+    stage('Debug Jenkinsfile version') {
+      steps {
+        sh 'echo "Jenkinsfile loaded ✅ v2025-12-20-fullpaths"; sed -n "1,40p" Jenkinsfile || true'
+      }
+    }
 
     stage('Build Backend') {
       steps {
@@ -56,7 +56,7 @@ stage('Debug Jenkinsfile version') {
         echo 'Deploying backend to app server...'
         sh """
           set -e
-	  IMAGE="${BACKEND_IMAGE}:latest"
+          IMAGE="${BACKEND_IMAGE}:latest"
 
           docker save "\$IMAGE" -o backend.tar
 
@@ -86,12 +86,12 @@ stage('Debug Jenkinsfile version') {
           scp -o StrictHostKeyChecking=no app/frontend/nginx.conf  devops@${WEB_SERVER_1}:/tmp/dashboard.conf
           ssh -o StrictHostKeyChecking=no devops@${WEB_SERVER_1} '
             set -e
-            sudo install -m 0644 /tmp/index.html /var/www/html/index.html
-            sudo install -m 0644 /tmp/dashboard.conf /etc/nginx/sites-available/dashboard
-            sudo ln -sf /etc/nginx/sites-available/dashboard /etc/nginx/sites-enabled/dashboard
-            sudo rm -f /etc/nginx/sites-enabled/default || true
-            sudo nginx -t
-            sudo systemctl reload nginx
+            sudo /usr/bin/install -m 0644 /tmp/index.html /var/www/html/index.html
+            sudo /usr/bin/install -m 0644 /tmp/dashboard.conf /etc/nginx/sites-available/dashboard
+            sudo /bin/ln -sf /etc/nginx/sites-available/dashboard /etc/nginx/sites-enabled/dashboard
+            sudo /bin/rm -f /etc/nginx/sites-enabled/default || true
+            sudo /usr/sbin/nginx -t
+            sudo /usr/bin/systemctl reload nginx
           '
 
           # web2
@@ -99,12 +99,12 @@ stage('Debug Jenkinsfile version') {
           scp -o StrictHostKeyChecking=no app/frontend/nginx.conf  devops@${WEB_SERVER_2}:/tmp/dashboard.conf
           ssh -o StrictHostKeyChecking=no devops@${WEB_SERVER_2} '
             set -e
-            sudo install -m 0644 /tmp/index.html /var/www/html/index.html
-            sudo install -m 0644 /tmp/dashboard.conf /etc/nginx/sites-available/dashboard
-            sudo ln -sf /etc/nginx/sites-available/dashboard /etc/nginx/sites-enabled/dashboard
-            sudo rm -f /etc/nginx/sites-enabled/default || true
-            sudo nginx -t
-            sudo systemctl reload nginx
+            sudo /usr/bin/install -m 0644 /tmp/index.html /var/www/html/index.html
+            sudo /usr/bin/install -m 0644 /tmp/dashboard.conf /etc/nginx/sites-available/dashboard
+            sudo /bin/ln -sf /etc/nginx/sites-available/dashboard /etc/nginx/sites-enabled/dashboard
+            sudo /bin/rm -f /etc/nginx/sites-enabled/default || true
+            sudo /usr/sbin/nginx -t
+            sudo /usr/bin/systemctl reload nginx
           '
         '''
       }
