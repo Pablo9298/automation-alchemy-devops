@@ -3,17 +3,40 @@
   <actions/>
   <description>Seed job to create pipeline jobs from Job DSL</description>
   <keepDependencies>false</keepDependencies>
+
   <properties/>
-  <scm class="hudson.scm.NullSCM"/>
+
+  <!-- ✅ Checkout repo so jenkins/jobs.groovy exists in workspace -->
+  <scm class="hudson.plugins.git.GitSCM" plugin="git">
+    <configVersion>2</configVersion>
+    <userRemoteConfigs>
+      <hudson.plugins.git.UserRemoteConfig>
+        <url>https://github.com/Pablo9298/automation-alchemy-devops.git</url>
+      </hudson.plugins.git.UserRemoteConfig>
+    </userRemoteConfigs>
+    <branches>
+      <hudson.plugins.git.BranchSpec>
+        <name>*/main</name>
+      </hudson.plugins.git.BranchSpec>
+    </branches>
+    <doGenerateSubmoduleConfigurations>false</doGenerateSubmoduleConfigurations>
+    <submoduleCfg class="empty-list"/>
+    <extensions/>
+  </scm>
+
   <canRoam>true</canRoam>
   <disabled>false</disabled>
   <blockBuildWhenDownstreamBuilding>false</blockBuildWhenDownstreamBuilding>
   <blockBuildWhenUpstreamBuilding>false</blockBuildWhenUpstreamBuilding>
+
   <triggers/>
   <concurrentBuild>false</concurrentBuild>
+
   <builders>
     <javaposse.jobdsl.plugin.ExecuteDslScripts plugin="job-dsl">
-      <targets>/var/lib/jenkins/jobs.groovy</targets>
+      <!-- ✅ Ant GLOB pattern relative to workspace -->
+      <targets>jenkins/jobs.groovy</targets>
+
       <usingScriptText>false</usingScriptText>
       <ignoreExisting>false</ignoreExisting>
       <removedJobAction>IGNORE</removedJobAction>
@@ -21,6 +44,7 @@
       <lookupStrategy>JENKINS_ROOT</lookupStrategy>
     </javaposse.jobdsl.plugin.ExecuteDslScripts>
   </builders>
+
   <publishers/>
   <buildWrappers/>
 </project>
