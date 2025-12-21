@@ -289,7 +289,7 @@
         dest: /etc/nginx/sites-enabled/loadbalancer
         state: link
 
-    - name: Allow HTTP in UFW
+    - name: Allow HTTP on Load Balancer (public entry point)
       ufw:
         rule: allow
         port: "80"
@@ -303,7 +303,9 @@
 
 
 # =========================================================
-# 4) WEB SERVERS (NGINX)
+# 4) WEB SERVERS (NGINX + UFW restricted)
+#    - HTTP ONLY from LB (192.168.56.10)
+#    - NO 3000 rules on webservers
 # =========================================================
 - name: Configure Web Servers
   hosts: webservers
@@ -315,11 +317,62 @@
         name: nginx
         state: present
 
-    - name: Allow HTTP in UFW
-      ufw:
-        rule: allow
-        port: "80"
-        proto: tcp
+    - name: Disable IPv6 in UFW (webservers)
+      ansible.builtin.lineinfile:
+        path: /etc/default/ufw
+        regexp: '^IPV6='
+        line: 'IPV6=no'
+      notify: reload ufw (webservers)
+
+
+    - name: Read UFW rules (numbered) on webservers
+      ansible.builtin.command: ufw status numbered
+      register: ufw_web_numbered
+      changed_when: false
+
+    - name: Remove public HTTP (80/tcp Anywhere) on webservers
+      ansible.builtin.shell: |
+        set -e
+        echo "{{ ufw_web_numbered.stdout }}" \
+          | sed -n -E 's/^\[\s*([0-9]+)\]\s+80\/tcp\s+ALLOW IN\s+Anywhere\s*$/\1/p' \
+          | sort -rn \
+          | while read -r n; do yes | ufw delete "$n"; done
+      args:
+        executable: /bin/bash
+      register: ufw_rm_web_80_any
+      changed_when: ufw_rm_web_80_any.stdout != ""
+      failed_when: false
+
+    - name: Remove public HTTP IPv6 (80/tcp v6 Anywhere) on webservers
+      ansible.builtin.shell: |
+        set -e
+        echo "{{ ufw_web_numbered.stdout }}" \
+          | sed -n -E 's/^\[\s*([0-9]+)\]\s+80\/tcp\s+\(v6\)\s+ALLOW IN\s+Anywhere\s+\(v6\)\s*$/\1/p' \
+          | sort -rn \
+          | while read -r n; do yes | ufw delete "$n"; done
+      args:
+        executable: /bin/bash
+      register: ufw_rm_web_80_v6_any
+      changed_when: ufw_rm_web_80_v6_any.stdout != ""
+      failed_when: false
+
+    - name: Remove any 3000/tcp allow rules on webservers (safe)
+      ansible.builtin.shell: |
+        set +e
+        ufw status numbered | sed -n -E 's/^\[\s*([0-9]+)\]\s+3000\/tcp\s+ALLOW IN\s+.*$/\1/p' | sort -rn | while read -r n; do
+          yes | ufw delete "$n"
+        done
+        exit 0
+      args:
+        executable: /bin/bash
+      register: ufw_rm_web_3000
+      changed_when: ufw_rm_web_3000.stdout != ""
+      failed_when: false
+
+    - name: Allow HTTP from Load Balancer only (webservers)
+      ansible.builtin.command: ufw allow from 192.168.56.10 to any port 80 proto tcp
+      register: ufw_allow_lb_web
+      changed_when: "'Rules updated' in ufw_allow_lb_web.stdout"
 
     - name: Start Nginx
       systemd:
@@ -336,21 +389,121 @@
         group: root
         mode: "0440"
 
+  handlers:
+    - name: reload ufw (webservers)
+      ansible.builtin.command: ufw reload
+
+
 
 # =========================================================
-# 5) APP SERVER (UFW PORT)
+# 5) APP SERVER (UFW restricted)
+#    - App port ONLY from web1/web2
 # =========================================================
 - name: Configure App Server
   hosts: appserver
   become: yes
 
   tasks:
-    - name: Allow application port in UFW
-      ufw:
-        rule: allow
-        port: "3000"
-        proto: tcp
+    - name: Read UFW rules (numbered) on appserver
+      ansible.builtin.command: ufw status numbered
+      register: ufw_app_numbered
+      changed_when: false
 
+    - name: Remove public APP rules (3000/tcp Anywhere) on appserver
+      ansible.builtin.shell: |
+        set -e
+        echo "{{ ufw_app_numbered.stdout }}" \
+          | sed -n -E 's/^\[\s*([0-9]+)\]\s+3000\/tcp\s+ALLOW IN\s+Anywhere\s*$/\1/p' \
+          | sort -rn \
+          | while read -r n; do yes | ufw delete "$n"; done
+      args:
+        executable: /bin/bash
+      register: ufw_rm_app_3000_any
+      changed_when: ufw_rm_app_3000_any.stdout != ""
+      failed_when: false
+
+    - name: Remove public APP rules IPv6 (3000/tcp v6 Anywhere) on appserver
+      ansible.builtin.shell: |
+        set -e
+        echo "{{ ufw_app_numbered.stdout }}" \
+          | sed -n -E 's/^\[\s*([0-9]+)\]\s+3000\/tcp\s+\(v6\)\s+ALLOW IN\s+Anywhere\s+\(v6\)\s*$/\1/p' \
+          | sort -rn \
+          | while read -r n; do yes | ufw delete "$n"; done
+      args:
+        executable: /bin/bash
+      register: ufw_rm_app_3000_v6_any
+      changed_when: ufw_rm_app_3000_v6_any.stdout != ""
+      failed_when: false
+
+    - name: Allow app port only from web1
+      ansible.builtin.command: ufw allow from 192.168.56.11 to any port 3000 proto tcp
+      register: ufw_allow_app_web1
+      changed_when: "'Rules updated' in ufw_allow_app_web1.stdout"
+
+    - name: Allow app port only from web2
+      ansible.builtin.command: ufw allow from 192.168.56.12 to any port 3000 proto tcp
+      register: ufw_allow_app_web2
+      changed_when: "'Rules updated' in ufw_allow_app_web2.stdout"
+
+    # --- IMPORTANT: Docker published ports can bypass UFW, so restrict via DOCKER-USER ---
+    - name: Ensure iptables persistence packages installed (appserver)
+      ansible.builtin.apt:
+        name:
+          - iptables-persistent
+          - netfilter-persistent
+        state: present
+        update_cache: yes
+
+    - name: Ensure DOCKER-USER allows established connections (appserver)
+      ansible.builtin.command: >
+        iptables -C DOCKER-USER -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
+      register: ipt_est
+      failed_when: false
+      changed_when: false
+
+    - name: Insert established rule in DOCKER-USER if missing (appserver)
+      ansible.builtin.command: >
+        iptables -I DOCKER-USER 1 -m conntrack --ctstate RELATED,ESTABLISHED -j RETURN
+      when: ipt_est.rc != 0
+
+    - name: Allow 3000 from web1 in DOCKER-USER (appserver)
+      ansible.builtin.command: >
+        iptables -C DOCKER-USER -i enp0s8 -p tcp -s 192.168.56.11 --dport 3000 -j ACCEPT
+      register: ipt_web1
+      failed_when: false
+      changed_when: false
+
+    - name: Insert allow rule for web1 if missing (appserver)
+      ansible.builtin.command: >
+        iptables -I DOCKER-USER 2 -i enp0s8 -p tcp -s 192.168.56.11 --dport 3000 -j ACCEPT
+      when: ipt_web1.rc != 0
+
+    - name: Allow 3000 from web2 in DOCKER-USER (appserver)
+      ansible.builtin.command: >
+        iptables -C DOCKER-USER -i enp0s8 -p tcp -s 192.168.56.12 --dport 3000 -j ACCEPT
+      register: ipt_web2
+      failed_when: false
+      changed_when: false
+
+    - name: Insert allow rule for web2 if missing (appserver)
+      ansible.builtin.command: >
+        iptables -I DOCKER-USER 3 -i enp0s8 -p tcp -s 192.168.56.12 --dport 3000 -j ACCEPT
+      when: ipt_web2.rc != 0
+
+    - name: Drop 3000 from everyone else on host-only interface (appserver)
+      ansible.builtin.command: >
+        iptables -C DOCKER-USER -i enp0s8 -p tcp --dport 3000 -j DROP
+      register: ipt_drop
+      failed_when: false
+      changed_when: false
+
+    - name: Insert drop rule if missing (appserver)
+      ansible.builtin.command: >
+        iptables -I DOCKER-USER 4 -i enp0s8 -p tcp --dport 3000 -j DROP
+      when: ipt_drop.rc != 0
+
+    - name: Save iptables rules (appserver)
+      ansible.builtin.command: netfilter-persistent save
 
 # =========================================================
 # 6) JENKINS (JCasC + Plugin Manager + Seed Job)
@@ -367,7 +520,6 @@
     plugin_manager_version: "2.13.2"
     plugin_manager_jar: "/usr/local/bin/jenkins-plugin-manager-{{ plugin_manager_version }}.jar"
     plugin_manager_url: "https://github.com/jenkinsci/plugin-installation-manager-tool/releases/download/{{ plugin_manager_version }}/jenkins-plugin-manager-{{ plugin_manager_version }}.jar"
-    seed_job_name: "seed-job"
     seed_job_dir: "/var/lib/jenkins/jobs/seed-job"
     seed_job_config: "/var/lib/jenkins/jobs/seed-job/config.xml"
     dsl_script_dest: "/var/lib/jenkins/jobs.groovy"
@@ -395,18 +547,47 @@
         state: present
         update_cache: yes
 
-    - name: Allow Jenkins port in UFW
-      ufw:
-        rule: allow
-        port: "8080"
-        proto: tcp
+    - name: Read UFW rules (numbered) on jenkins
+      ansible.builtin.command: ufw status numbered
+      register: ufw_jenkins_numbered
+      changed_when: false
+
+    - name: Remove public Jenkins rule (8080 Anywhere) if present
+      ansible.builtin.shell: |
+        set -e
+        echo "{{ ufw_jenkins_numbered.stdout }}" \
+          | sed -n -E 's/^\[\s*([0-9]+)\]\s+8080\/tcp\s+ALLOW IN\s+Anywhere\s*$/\1/p' \
+          | sort -rn \
+          | while read -r n; do yes | ufw delete "$n"; done
+      args:
+        executable: /bin/bash
+      register: ufw_rm_jenkins_8080_any
+      changed_when: ufw_rm_jenkins_8080_any.stdout != ""
+      failed_when: false
+
+    - name: Remove public Jenkins rule IPv6 (8080 v6 Anywhere) if present
+      ansible.builtin.shell: |
+        set -e
+        echo "{{ ufw_jenkins_numbered.stdout }}" \
+          | sed -n -E 's/^\[\s*([0-9]+)\]\s+8080\/tcp\s+\(v6\)\s+ALLOW IN\s+Anywhere\s+\(v6\)\s*$/\1/p' \
+          | sort -rn \
+          | while read -r n; do yes | ufw delete "$n"; done
+      args:
+        executable: /bin/bash
+      register: ufw_rm_jenkins_8080_v6_any
+      changed_when: ufw_rm_jenkins_8080_v6_any.stdout != ""
+      failed_when: false
+
+    - name: Allow Jenkins only from host machine (192.168.56.1)
+      ansible.builtin.command: ufw allow from 192.168.56.1 to any port 8080 proto tcp
+      register: ufw_allow_jenkins_host
+      changed_when: "'Rules updated' in ufw_allow_jenkins_host.stdout"
 
     - name: Ensure curl is installed
       apt:
         name: curl
         state: present
 
-    # --- JCasC files ---
     - name: Create JCasC directory
       file:
         path: "{{ jcasc_dir }}"
@@ -455,14 +636,12 @@
         group: jenkins
         mode: "0644"
 
-    # --- Disable setup wizard + enable JCasC ---
     - name: Disable Jenkins setup wizard and enable JCasC
       lineinfile:
         path: /etc/default/jenkins
         regexp: '^JAVA_ARGS='
         line: 'JAVA_ARGS="-Djava.awt.headless=true -Djenkins.install.runSetupWizard=false -Dcasc.jenkins.config={{ jcasc_file }}"'
 
-    # --- Install plugins using plugin manager (no CLI, no UI) ---
     - name: Download Jenkins Plugin Manager
       get_url:
         url: "{{ plugin_manager_url }}"

@@ -112,18 +112,19 @@ pipeline {
 
     stage('Verify Deployment') {
       steps {
-        echo 'Verifying deployment...'
-        sh '''
+        echo 'Verifying backend from web servers (allowed path)...'
+        sh """
           set -e
 
-          curl -fsS http://${APP_SERVER}:3000/health
-          curl -fsS http://${WEB_SERVER_1} > /dev/null
-          curl -fsS http://${WEB_SERVER_2} > /dev/null
+          echo '[web1] -> app /health'
+          ssh -o StrictHostKeyChecking=no devops@${WEB_SERVER_1} 'curl -fsS http://${APP_SERVER}:3000/health'
 
-          echo "All services are healthy ✅"
-        '''
+          echo '[web2] -> app /health'
+          ssh -o StrictHostKeyChecking=no devops@${WEB_SERVER_2} 'curl -fsS http://${APP_SERVER}:3000/health'
+        """
       }
     }
+
   }
 
   post {
