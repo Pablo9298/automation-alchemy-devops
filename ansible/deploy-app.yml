@@ -81,7 +81,7 @@
     - name: Copy dashboard index.html
       copy:
         src: ../app/frontend/index.html
-        dest: /usr/share/nginx/html/index.html
+        dest: /var/www/html/index.html
         mode: "0644"
 
     - name: Copy nginx dashboard config
