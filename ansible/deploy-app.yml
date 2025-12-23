@@ -78,6 +78,12 @@
   become: yes
 
   tasks:
+    - name: Ensure nginx is installed (safety)
+      apt:
+        name: nginx
+        state: present
+        update_cache: yes
+
     - name: Copy dashboard index.html
       copy:
         src: ../app/frontend/index.html
@@ -90,27 +96,32 @@
         dest: /etc/nginx/sites-available/dashboard
         mode: "0644"
 
-    - name: Disable default nginx site
+    - name: Remove default nginx site link if exists
       file:
         path: /etc/nginx/sites-enabled/default
         state: absent
 
-    - name: Enable dashboard site
+    - name: Remove broken dashboard link if exists
+      file:
+        path: /etc/nginx/sites-enabled/dashboard
+        state: absent
+
+    - name: Enable dashboard site (force)
       file:
         src: /etc/nginx/sites-available/dashboard
         dest: /etc/nginx/sites-enabled/dashboard
         state: link
+        force: yes
 
     - name: Test nginx config
       command: nginx -t
       changed_when: false
 
-    - name: Restart nginx
+    - name: Reload nginx (better than restart)
       systemd:
         name: nginx
-        state: restarted
+        state: reloaded
         enabled: yes
-
 
 #############################
 # Verify Load Balancer

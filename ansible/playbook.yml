@@ -71,6 +71,13 @@
         state: present
       when: vagrant_authkeys is defined and vagrant_authkeys.content is defined
 
+    - name: Add host user's public key to devops authorized_keys (from control machine)
+      authorized_key:
+        user: devops
+        key: "{{ lookup('file', lookup('env','HOME') + '/.ssh/id_ed25519.pub') }}"
+        state: present
+
+
     - name: Configure SSH - disable password authentication
       lineinfile:
         path: /etc/ssh/sshd_config
@@ -642,6 +649,25 @@
         regexp: '^JAVA_ARGS='
         line: 'JAVA_ARGS="-Djava.awt.headless=true -Djenkins.install.runSetupWizard=false -Dcasc.jenkins.config={{ jcasc_file }}"'
 
+    - name: Ensure systemd override dir exists for Jenkins
+      file:
+        path: /etc/systemd/system/jenkins.service.d
+        state: directory
+        mode: "0755"
+
+    - name: Create systemd override for Jenkins JAVA_OPTS (disable wizard + enable JCasC)
+      copy:
+        dest: /etc/systemd/system/jenkins.service.d/override.conf
+        content: |
+          [Service]
+          Environment="JAVA_OPTS=-Djava.awt.headless=true -Djenkins.install.runSetupWizard=false -Dcasc.jenkins.config={{ jcasc_file }}"
+        mode: "0644"
+
+    - name: Reload systemd daemon
+      systemd:
+        daemon_reload: yes
+
+
     - name: Download Jenkins Plugin Manager
       get_url:
         url: "{{ plugin_manager_url }}"
@@ -670,6 +696,45 @@
         group: jenkins
         recurse: yes
 
+    - name: Ensure .ssh exists for jenkins (JENKINS_HOME)
+      file:
+        path: /var/lib/jenkins/.ssh
+        state: directory
+        owner: jenkins
+        group: jenkins
+        mode: "0700"
+
+    - name: Generate SSH keypair for jenkins (if missing)
+      community.crypto.openssh_keypair:
+        path: /var/lib/jenkins/.ssh/id_ed25519
+        type: ed25519
+        owner: jenkins
+        group: jenkins
+        mode: "0600"
+
+    - name: Ensure /home/jenkins/.ssh exists
+      file:
+        path: /home/jenkins/.ssh
+        state: directory
+        owner: jenkins
+        group: jenkins
+        mode: "0700"
+
+    - name: Link key so default ssh/scp finds it in /home/jenkins/.ssh
+      file:
+        src: /var/lib/jenkins/.ssh/id_ed25519
+        dest: /home/jenkins/.ssh/id_ed25519
+        state: link
+        force: yes
+
+    - name: Link pubkey too (optional)
+      file:
+        src: /var/lib/jenkins/.ssh/id_ed25519.pub
+        dest: /home/jenkins/.ssh/id_ed25519.pub
+        state: link
+        force: yes
+
+
     - name: Restart and enable Jenkins
       systemd:
         name: jenkins
@@ -681,3 +746,25 @@
         port: 8080
         delay: 5
         timeout: 240
+
+# =========================================================
+# 7) ALLOW JENKINS SSH -> DEVOPS ON SERVERS (for scp/ssh deploy)
+# =========================================================
+- name: Allow Jenkins to SSH as devops to servers
+  hosts: loadbalancer,webservers,appserver
+  become: yes
+
+  tasks:
+    - name: Read jenkins public key from jenkins VM
+      slurp:
+        src: /var/lib/jenkins/.ssh/id_ed25519.pub
+      delegate_to: jenkins
+      run_once: true
+      register: jenkins_pub
+
+    - name: Add jenkins pubkey to devops authorized_keys
+      authorized_key:
+        user: devops
+        key: "{{ jenkins_pub.content | b64decode }}"
+        state: present
+
