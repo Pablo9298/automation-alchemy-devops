@@ -1,5 +1,7 @@
 # 🔮 DevOps Automation Project
 
+TEEEEEEEEEEEEEST
+
 **Полностью автоматизированная инфраструктура с CI/CD pipeline для развертывания веб-приложения с мониторингом**
 
 ![Status](https://img.shields.io/badge/status-production-green)
