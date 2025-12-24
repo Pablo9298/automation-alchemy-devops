@@ -1,6 +1,10 @@
 pipeline {
   agent any
 
+  triggers {
+    pollSCM('H/1 * * * *')   // проверка изменений раз в минуту
+  }
+
   environment {
     BACKEND_IMAGE = 'infrastructure-backend'
     APP_SERVER   = '192.168.56.13'
