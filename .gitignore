@@ -16,6 +16,9 @@ id_rsa.pub
 id_ed25519
 *.pem
 *.key
+.ssh/known_hosts
+.ssh/known_hosts.*
+
 
 # Node
 node_modules/
