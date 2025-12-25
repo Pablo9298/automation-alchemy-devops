@@ -1,7 +1,5 @@
 pipelineJob('automation-alchemy-devops') {
-  triggers {
-    pollSCM('*/2 * * * *')
-  }
+
   definition {
     cpsScm {
       scm {
