@@ -1,6 +1,6 @@
 pipelineJob('automation-alchemy-devops') {
   triggers {
-    scm('H/1 * * * *')   // polling раз в минуту
+    pollSCM('*/2 * * * *')
   }
   definition {
     cpsScm {
