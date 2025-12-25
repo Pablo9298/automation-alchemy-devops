@@ -47,7 +47,7 @@
         groups: sudo
         append: yes
         create_home: yes
-        password: "{{ 'devops123' | password_hash('sha512') }}"
+        password: "{{ 'devops123' | password_hash('sha512', 'fixedsalt') }}"
 
     - name: Create .ssh directory for devops
       file:
@@ -511,6 +511,7 @@
 
     - name: Save iptables rules (appserver)
       ansible.builtin.command: netfilter-persistent save
+      changed_when: false
 
 # =========================================================
 # 6) JENKINS (JCasC + Plugin Manager + Seed Job)
