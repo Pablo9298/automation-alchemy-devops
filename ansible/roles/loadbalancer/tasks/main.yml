@@ -1,0 +1,33 @@
+---
+- name: Install nginx
+  apt:
+    name: nginx
+    state: present
+    update_cache: yes
+
+- name: Deploy load balancer nginx config
+  template:
+    src: loadbalancer.conf.j2
+    dest: /etc/nginx/sites-available/loadbalancer
+    mode: "0644"
+  notify: Reload nginx
+
+- name: Enable load balancer site
+  file:
+    src: /etc/nginx/sites-available/loadbalancer
+    dest: /etc/nginx/sites-enabled/loadbalancer
+    state: link
+    force: yes
+  notify: Reload nginx
+
+- name: Disable default nginx site
+  file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify: Reload nginx
+
+- name: Ensure nginx is running
+  service:
+    name: nginx
+    state: started
+    enabled: yes

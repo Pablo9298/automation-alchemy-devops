@@ -144,6 +144,57 @@ Jenkins is configured using **Jenkins Configuration as Code (JCasC)**.
 
 ---
 
+## IMPORTANT: Set your GitHub repository URL (for reviewers)
+
+If you (the reviewer) want Jenkins to build **your own GitHub repository**, you must update the repository URL in **two files**.
+
+### 1) Seed Job repository URL
+
+**File:**
+```
+jenkins/seed-job.xml
+```
+
+Find and replace:
+
+```xml
+<url>https://github.com/Pablo9298/automation-alchemy-devops.git</url>
+```
+
+With your repository:
+
+```xml
+<url>https://github.com/<your-username>/<your-repo>.git</url>
+```
+
+### 2) Pipeline Job repository URL (Job DSL)
+
+**File:**
+```
+jenkins/jobs.groovy
+```
+
+Find and replace:
+
+```groovy
+url('https://github.com/Pablo9298/automation-alchemy-devops.git')
+```
+
+With your repository:
+
+```groovy
+url('https://github.com/<your-username>/<your-repo>.git')
+```
+
+### After changing URLs
+
+1. Commit and push changes to your GitHub repo
+2. Run the deployment (`./deploy.sh`) or start Jenkins VM
+3. In Jenkins, run the **Seed Job** (it will generate/update the pipeline job)
+4. Push a change to the repo to see the pipeline trigger (Webhook or Poll SCM, depending on your setup)
+
+---
+
 ## Load Balancer Verification (Review)
 
 On the load balancer VM:
