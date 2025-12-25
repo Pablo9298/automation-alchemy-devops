@@ -1,920 +1,202 @@
-# 🔮 DevOps Automation Project
+# Infra Automation – DevOps Infrastructure Project
 
-**Полностью автоматизированная инфраструктура с CI/CD pipeline для развертывания веб-приложения с мониторингом**
+## Overview
 
-![Status](https://img.shields.io/badge/status-production-green)
-![License](https://img.shields.io/badge/license-MIT-blue)
+This project demonstrates a DevOps automation setup using **Vagrant, Ansible, Docker, Jenkins, and Nginx**.
 
----
+The focus of the project is:
+- infrastructure provisioning with Vagrant
+- configuration management with Ansible
+- CI/CD automation with Jenkins
+- containerized application deployment with Docker
+- load balancing using Nginx
 
-## 📋 Содержание
-
-- [Описание проекта](#описание-проекта)
-- [Архитектура](#архитектура)
-- [Требования](#требования)
-- [Быстрый старт](#быстрый-старт)
-- [Детальная установка](#детальная-установка)
-- [Структура проекта](#структура-проекта)
-- [Конфигурация](#конфигурация)
-- [Тестирование](#тестирование)
-- [CI/CD Pipeline](#cicd-pipeline)
-- [Troubleshooting](#troubleshooting)
-- [FAQ](#faq)
+The project reflects the **actual implementation** and is intended for learning, review, and portfolio demonstration.
 
 ---
 
-## 🎯 Описание проекта
+## Architecture
 
-Этот проект демонстрирует полную автоматизацию DevOps процессов:
+The infrastructure consists of several virtual machines managed by **Vagrant** and configured using **Ansible**.
 
-- ✅ **Автоматическое создание инфраструктуры** (5 виртуальных машин)
-- ✅ **Конфигурация безопасности** (firewall, SSH keys, пользователи)
-- ✅ **Контейнеризация приложений** (Docker)
-- ✅ **Load Balancing** (Nginx)
-- ✅ **CI/CD Pipeline** (Jenkins)
-- ✅ **Мониторинг инфраструктуры** (Веб-приложение с метриками)
-- ✅ **Идемпотентность** (повторный запуск безопасен)
-- ✅ **Документация** (полная и понятная)
+| VM | Purpose |
+|----|--------|
+| loadbalancer | Nginx load balancer |
+| web servers | Serve frontend via Nginx |
+| app server | Runs backend (Node.js) in Docker |
+| jenkins | CI/CD automation |
 
-### Что делает проект?
+Traffic flow:
 
-1. **Создает 5 VM** с правильными hostname и статическими IP
-2. **Настраивает безопасность** - отключает root login, настраивает SSH keys, firewall
-3. **Устанавливает Docker** на нужные серверы
-4. **Деплоит приложение** - frontend на 2 веб-серверах, backend на app сервере
-5. **Настраивает Load Balancer** - Nginx балансирует трафик между веб-серверами
-6. **Настраивает Jenkins** - CI/CD для автоматического деплоя
+Client → Load Balancer → Web Servers → Application
 
 ---
 
-## 🏗️ Архитектура
+## Technology Stack
+
+- **Virtualization**: Vagrant, VirtualBox
+- **Configuration Management**: Ansible
+- **CI/CD**: Jenkins (JCasC, seed jobs)
+- **Containers**: Docker, Docker Compose
+- **Load Balancer**: Nginx
+- **Backend**: Node.js
+- **OS**: Linux (Ubuntu-based VMs)
+
+---
+
+## Project Structure (Actual)
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                         Internet                            │
-└──────────────────────────┬──────────────────────────────────┘
-                           │
-                           ▼
-                  ┌─────────────────┐
-                  │  Load Balancer  │
-                  │  192.168.56.10  │
-                  │     (Nginx)     │
-                  └────────┬────────┘
-                           │
-                ┌──────────┴──────────┐
-                │                     │
-                ▼                     ▼
-         ┌────────────┐        ┌────────────┐
-         │ Web Server 1│        │ Web Server 2│
-         │192.168.56.11│        │192.168.56.12│
-         │  (Docker)  │        │  (Docker)  │
-         └────────────┘        └────────────┘
-                │                     │
-                └──────────┬──────────┘
-                           │
-                           ▼
-                  ┌─────────────────┐
-                  │   App Server    │
-                  │  192.168.56.13  │
-                  │  (Docker API)   │
-                  └─────────────────┘
-
-         ┌─────────────────┐
-         │ Jenkins Server  │
-         │  192.168.56.14  │
-         │    (CI/CD)      │
-         └─────────────────┘
-```
-
-### Описание компонентов:
-
-| Компонент | Hostname | IP | RAM | CPU | Роль |
-|-----------|----------|-----|-----|-----|------|
-| **Load Balancer** | loadbalancer | 192.168.56.10 | 512MB | 1 | Nginx reverse proxy |
-| **Web Server 1** | webserver1 | 192.168.56.11 | 1GB | 1 | Frontend (Docker) |
-| **Web Server 2** | webserver2 | 192.168.56.12 | 1GB | 1 | Frontend (Docker) |
-| **App Server** | appserver | 192.168.56.13 | 1GB | 1 | Backend API (Docker) |
-| **Jenkins** | jenkinsserver | 192.168.56.14 | 2GB | 2 | CI/CD Server |
-
----
-
-## 💻 Требования
-
-### Минимальные системные требования:
-
-- **CPU**: 4+ ядер
-- **RAM**: 8GB+ (рекомендуется 16GB)
-- **Disk**: 50GB свободного места
-- **OS**: Windows 10/11, macOS, Linux
-
-### Необходимое ПО:
-
-1. **VirtualBox 7.0+**
-   - Скачать: https://www.virtualbox.org/wiki/Downloads
-   - Установить VirtualBox и Extension Pack
-
-2. **Vagrant 2.3+**
-   - Скачать: https://www.vagrantup.com/downloads
-   - Добавить в PATH
-
-3. **Ansible 2.9+**
-   - **Linux/Mac**: `brew install ansible` или `apt install ansible`
-   - **Windows**: WSL2 + `sudo apt install ansible`
-
-4. **Git**
-   - Скачать: https://git-scm.com/downloads
-
-### Проверка установки:
-
-```bash
-vboxmanage --version      # VirtualBox 7.0.12
-vagrant --version         # Vagrant 2.3.7
-ansible --version         # ansible 2.9.27
-git --version            # git version 2.39.0
+infra-automation/
+├── Vagrantfile
+├── Jenkinsfile
+├── deploy.sh
+├── README.md
+├── ansible/
+│   ├── ansible.cfg
+│   ├── inventory.ini
+│   ├── main.yml
+│   ├── playbook.yml
+│   ├── deploy-app.yml
+│   ├── group_vars/
+│   │   └── all.yml
+│   └── roles/
+│       └── loadbalancer/
+│           ├── tasks/
+│           │   └── main.yml
+│           ├── handlers/
+│           │   └── main.yml
+│           └── templates/
+│               └── loadbalancer.conf.j2
+├── app/
+│   ├── docker-compose.yml
+│   ├── backend/
+│   │   ├── Dockerfile
+│   │   ├── package.json
+│   │   └── server.js
+│   └── frontend/
+│       ├── index.html
+│       └── nginx.conf
+├── jenkins/
+│   ├── jcasc.yml
+│   ├── jobs.groovy
+│   ├── plugins.txt
+│   └── seed-job.xml
+└── vagrant/
 ```
 
 ---
 
-## 🚀 Быстрый старт
+## Prerequisites
 
-### ONE-CLICK DEPLOYMENT (Рекомендуется для ревью)
+- VirtualBox
+- Vagrant
+- Ansible
+- Docker
+- Git
 
-```bash
-# 1. Клонируй проект
-git clone <your-repo-url>
-cd devops-project
-
-# 2. Сделай скрипт исполняемым
-chmod +x deploy.sh
-
-# 3. Запусти автоматическое развертывание
-./deploy.sh
-```
-
-**Готово!** Скрипт автоматически:
-- Создаст 5 VM
-- Настроит безопасность
-- Установит Docker
-- Задеплоит приложение
-- Настроит Load Balancer
-- Установит Jenkins
-
-⏱️ **Время выполнения**: ~15-20 минут
-
-### После завершения:
+Verify installations:
 
 ```bash
-# Проверь статус
-vagrant status
-
-# Открой приложение
-# В браузере: http://192.168.56.10
-```
-
----
-
-## 📦 Детальная установка
-
-### Шаг 1: Подготовка
-
-```bash
-# Клонируй репозиторий
-git clone <your-repo-url>
-cd devops-project
-
-# Проверь структуру
-ls -la
-```
-
-### Шаг 2: Создание VM
-
-```bash
-# Создай все VM
-vagrant up
-
-# Это создаст:
-# - lb (loadbalancer)
-# - web1 (webserver1)
-# - web2 (webserver2)
-# - app (appserver)
-# - jenkins (jenkinsserver)
-```
-
-### Шаг 3: Конфигурация через Ansible
-
-```bash
-cd ansible
-
-# Проверь подключение
-ansible all -i inventory.ini -m ping
-
-# Запусти конфигурацию
-ansible-playbook -i inventory.ini playbook.yml
-
-cd ..
-```
-
-### Шаг 4: Деплой приложения
-
-```bash
-cd ansible
-
-# Задеплой приложение
-ansible-playbook -i inventory.ini deploy-app.yml
-
-cd ..
-```
-
-### Шаг 5: Проверка
-
-```bash
-# Проверь VM
-vagrant status
-
-# Проверь приложение
-curl http://192.168.56.10
-
-# Проверь backend API
-curl http://192.168.56.13:3000/api/metrics
-
-# Открой в браузере
-# http://192.168.56.10
-```
-
----
-
-## 📁 Структура проекта
-
-```
-devops-project/
-├── README.md                      # Этот файл
-├── Vagrantfile                    # Конфигурация VM
-├── deploy.sh                      # Главный скрипт деплоя
-│
-├── ansible/                       # Ansible конфигурация
-│   ├── inventory.ini             # Список хостов
-│   ├── playbook.yml              # Главный playbook
-│   └── deploy-app.yml            # Деплой приложения
-│
-├── app/                          # Приложение
-│   ├── backend/                  # Backend API
-│   │   ├── server.js            # Node.js сервер
-│   │   ├── package.json         # Зависимости
-│   │   └── Dockerfile           # Docker образ
-│   │
-│   └── frontend/                 # Frontend
-│       ├── index.html           # Веб-интерфейс
-│       ├── nginx.conf           # Nginx конфиг
-│       └── Dockerfile           # Docker образ
-│
-├── jenkins/                      # CI/CD
-│   └── Jenkinsfile              # Pipeline конфигурация
-│
-└── docs/                         # Документация
-    ├── SETUP.md                 # Руководство по установке
-    ├── REVIEW.md                # Инструкции для ревью
-    └── ARCHITECTURE.md          # Описание архитектуры
-```
-
----
-
-## ⚙️ Конфигурация
-
-### Vagrantfile - Конфигурация VM
-
-```ruby
-machines = {
-  "lb" => {
-    hostname: "loadbalancer",
-    ip: "192.168.56.10",
-    memory: 512,
-    cpus: 1
-  },
-  # ... остальные VM
-}
-```
-
-### Ansible Inventory
-
-```ini
-[loadbalancer]
-192.168.56.10 hostname=loadbalancer
-
-[webservers]
-192.168.56.11 hostname=webserver1
-192.168.56.12 hostname=webserver2
-
-[appserver]
-192.168.56.13 hostname=appserver
-
-[jenkins]
-192.168.56.14 hostname=jenkinsserver
-```
-
-### Nginx Load Balancer
-
-```nginx
-upstream webservers {
-    server 192.168.56.11:80;
-    server 192.168.56.12:80;
-}
-
-server {
-    listen 80;
-    location / {
-        proxy_pass http://webservers;
-    }
-}
-```
-
----
-
-## ✅ Тестирование (для ревью)
-
-### Автоматические тесты
-
-Весь проект протестирован и проходит все требования ревью:
-
-#### 1. Чистый старт (blank slate)
-
-```bash
-# Удали все VM
-vagrant destroy -f
-
-# Проверь что VM нет
-vagrant status
-vboxmanage list vms
-
-# Запусти автоматизацию
-./deploy.sh
-
-# Все должно работать автоматически!
-```
-
-#### 2. Проверка VM
-
-```bash
-# Проверь статус
-vagrant status  # Все VM должны быть running
-
-# Проверь hostname
-vagrant ssh lb
-hostname  # должно быть: loadbalancer
-exit
-
-# Проверь что все VM видят друг друга
-vagrant ssh web1
-ping loadbalancer    # OK
-ping appserver       # OK
-ping jenkinsserver   # OK
-exit
-```
-
-#### 3. Проверка IP адресов
-
-```bash
-# Проверь статический IP
-vagrant ssh app
-ip a | grep 192.168.56
-# должен показать: 192.168.56.13
-
-# Перезагрузи VM
-sudo reboot
-
-# Подожди 1 минуту
-sleep 60
-
-# Проверь что IP не изменился
-vagrant ssh app
-ip a | grep 192.168.56
-# должен показать: 192.168.56.13
-exit
-```
-
-#### 4. Проверка пользователя devops
-
-```bash
-vagrant ssh web2
-
-# Проверь что пользователь существует
-grep devops /etc/passwd
-# devops:x:1001:1001::/home/devops:/bin/bash
-
-# Проверь группы
-groups devops
-# devops : devops sudo
-
-# Проверь sudo
-sudo visudo  # должен запросить пароль
-# Enter password: devops123
-
-exit
-```
-
-#### 5. Проверка SSH
-
-```bash
-# Попробуй войти как root (должно быть отказано)
-ssh root@192.168.56.11
-# Permission denied
-
-# Попробуй войти как другой юзер (должно быть отказано)
-ssh linus_torvalds@192.168.56.11
-# Permission denied
-
-# Попробуй войти с паролем (должно быть отказано)
-ssh -o PreferredAuthentications=password devops@192.168.56.11
-# Permission denied
-```
-
-#### 6. Проверка umask
-
-```bash
-vagrant ssh jenkins
-umask
-# 0022
-
-touch testfile
-ls -l testfile
-# -rw-r--r-- 1 devops devops
-
-rm testfile
-exit
-```
-
-#### 7. Проверка обновлений
-
-```bash
-vagrant ssh lb
-sudo apt update && sudo apt list --upgradable
-# All packages up to date
-
-exit
-```
-
-#### 8. Проверка Docker
-
-```bash
-vagrant ssh app
-
-# Проверь версию
+vagrant --version
+ansible --version
 docker --version
-# Docker version 24.0.x
-
-# Проверь running контейнеры
-docker ps
-# должен показать backend контейнер
-
-# Проверь логи
-docker logs backend
-# должен показать "Backend server running"
-
-exit
-```
-
-#### 9. Проверка Firewall
-
-```bash
-vagrant ssh web1
-
-sudo ufw status verbose
-# Status: active
-# To                         Action      From
-# --                         ------      ----
-# 22/tcp                     ALLOW       Anywhere
-# 80/tcp                     ALLOW       Anywhere
-
-exit
-```
-
-#### 10. Проверка Load Balancer
-
-```bash
-# Открой в браузере несколько раз
-# http://192.168.56.10
-
-# Каждый раз refresh - должен показывать метрики
-
-# Проверь логи
-vagrant ssh lb
-sudo tail -f /var/log/nginx/access.log
-# должен показать запросы к обоим серверам (11 и 12)
-
-exit
-```
-
-#### 11. Проверка приложения
-
-Открой в браузере: **http://192.168.56.10**
-
-Должно быть видно:
-- ✅ CPU Usage с процентами
-- ✅ Memory Usage с деталями
-- ✅ Disk Usage с графиком
-- ✅ Server Information (hostname, uptime, platform)
-- ✅ Network Interfaces
-- ✅ Данные обновляются каждые 5 секунд
-
-#### 12. Проверка идемпотентности
-
-```bash
-cd ansible
-
-# Запусти playbook несколько раз
-ansible-playbook -i inventory.ini playbook.yml
-ansible-playbook -i inventory.ini playbook.yml
-ansible-playbook -i inventory.ini playbook.yml
-
-# Не должно быть ошибок
-# changed=0 (никаких изменений не применено)
+git --version
 ```
 
 ---
 
-## 🔄 CI/CD Pipeline
+## Deployment
 
-### Настройка Jenkins
-
-1. **Открой Jenkins**: http://192.168.56.14:8080
-
-2. **Получи пароль**:
-```bash
-vagrant ssh jenkins
-sudo cat /var/lib/jenkins/secrets/initialAdminPassword
-# Скопируй пароль
-exit
-```
-
-3. **Установи плагины**:
-   - Git plugin
-   - Pipeline plugin
-   - SSH Agent plugin
-
-4. **Создай pipeline job**:
-   - New Item → Pipeline
-   - Configure → Pipeline
-   - Definition: Pipeline script from SCM
-   - SCM: Git
-   - Repository URL: <your-git-repo>
-   - Script Path: Jenkinsfile
-
-5. **Настрой SSH ключи**:
-```bash
-# На Jenkins сервере
-vagrant ssh jenkins
-sudo su - jenkins
-ssh-keygen -t rsa -b 4096
-cat ~/.ssh/id_rsa.pub
-
-# Скопируй публичный ключ на все серверы
-ssh-copy-id devops@192.168.56.11
-ssh-copy-id devops@192.168.56.12
-ssh-copy-id devops@192.168.56.13
-```
-
-### Демонстрация CI/CD
+### One-Click Deployment
 
 ```bash
-# 1. Измени код
-nano app/frontend/index.html
-# Добавь: <h2>Version 2.0</h2>
-
-# 2. Закоммить
-git add .
-git commit -m "Update to v2.0"
-git push
-
-# 3. Jenkins автоматически:
-#    - Обнаружит изменения
-#    - Соберёт Docker образы
-#    - Протестирует backend
-#    - Задеплоит на серверы
-#    - Проверит что всё работает
-
-# 4. Проверь результат
-curl http://192.168.56.10
-# Должно показать "Version 2.0"
+chmod +x deploy.sh
+./deploy.sh
 ```
 
-### Pipeline этапы:
-
-1. **Checkout** - скачивает код из Git
-2. **Build Backend** - собирает Docker образ backend
-3. **Build Frontend** - собирает Docker образ frontend
-4. **Test Backend** - запускает тесты API
-5. **Deploy Backend** - деплоит на app server
-6. **Deploy Frontend** - деплоит на web servers
-7. **Verify Deployment** - проверяет что всё работает
+This will:
+- start VMs
+- apply Ansible configuration
+- configure load balancer
+- deploy application containers
+- prepare Jenkins environment
 
 ---
 
-## 🐛 Troubleshooting
-
-### VM не запускаются
+### Manual Deployment
 
 ```bash
-# Проверь VirtualBox
-vboxmanage list vms
-
-# Удали и пересоздай
-vagrant destroy -f
 vagrant up
-
-# Проверь логи
-vagrant up --debug
-```
-
-### Ansible ошибки
-
-```bash
-# Проверь SSH подключение
-ansible all -i ansible/inventory.ini -m ping
-
-# Проверь синтаксис
-ansible-playbook ansible/playbook.yml --syntax-check
-
-# Запусти с verbose
-ansible-playbook ansible/playbook.yml -vvv
-```
-
-### Docker не работает
-
-```bash
-vagrant ssh app
-
-# Проверь статус
-sudo systemctl status docker
-
-# Перезапусти
-sudo systemctl restart docker
-
-# Проверь логи
-sudo journalctl -u docker -f
-```
-
-### Jenkins не доступен
-
-```bash
-vagrant ssh jenkins
-
-# Проверь статус
-sudo systemctl status jenkins
-
-# Проверь логи
-sudo journalctl -u jenkins -f
-
-# Перезапусти
-sudo systemctl restart jenkins
-```
-
-### Приложение не открывается
-
-```bash
-# Проверь backend
-curl http://192.168.56.13:3000/health
-
-# Проверь frontend
-curl http://192.168.56.11
-curl http://192.168.56.12
-
-# Проверь load balancer
-curl http://192.168.56.10
-
-# Проверь Docker контейнеры
-vagrant ssh app
-docker ps
-docker logs backend
-exit
-```
-
-### Сеть не работает
-
-```bash
-vagrant ssh web1
-
-# Проверь IP
-ip a
-
-# Проверь пинг
-ping 192.168.56.13
-ping google.com
-
-# Проверь DNS
-cat /etc/hosts
-
-exit
+ansible-playbook -i ansible/inventory.ini ansible/main.yml
 ```
 
 ---
 
-## ❓ FAQ
+## CI/CD (Jenkins)
 
-### Q: Сколько времени занимает полное развертывание?
-**A**: 15-20 минут для полного развертывания с нуля.
+Jenkins is configured using **Jenkins Configuration as Code (JCasC)**.
 
-### Q: Можно ли запустить на слабом компьютере?
-**A**: Минимум 8GB RAM. Можно уменьшить RAM для VM в Vagrantfile, но производительность снизится.
+- `jcasc.yml` – Jenkins system configuration
+- `jobs.groovy` – seed job DSL
+- `plugins.txt` – Jenkins plugins list
+- `Jenkinsfile` – pipeline definition
 
-### Q: Как остановить все VM?
-**A**: `vagrant halt` - остановить все VM. `vagrant destroy -f` - удалить все VM.
+---
 
-### Q: Как подключиться к VM?
-**A**: `vagrant ssh <имя>` - например `vagrant ssh lb`, `vagrant ssh web1`.
+## Load Balancer Verification (Review)
 
-### Q: Можно ли использовать другой провайдер (не VirtualBox)?
-**A**: Да, Vagrant поддерживает VMware, Hyper-V, но нужно адаптировать Vagrantfile.
+On the load balancer VM:
 
-### Q: Как изменить IP адреса?
-**A**: Отредактируй Vagrantfile и ansible/inventory.ini, затем `vagrant destroy -f && vagrant up`.
+```bash
+cat /etc/nginx/nginx.conf
+sudo systemctl status nginx
+```
 
-### Q: Что делать если забыл пароль devops?
-**A**: Пароль: `devops123`. Можно изменить в ansible/playbook.yml.
+Refresh the application multiple times to confirm traffic is distributed correctly.
 
-### Q: Как добавить больше VM?
-**A**: Добавь конфигурацию в Vagrantfile секцию `machines` и обнови ansible/inventory.ini.
+---
 
-### Q: Работает ли на Windows?
-**A**: Да, но нужен WSL2 для Ansible. Или используй Ansible через Docker.
+## Idempotency
 
-### Q: Как очистить всё и начать заново?
-**A**: 
+Re-run Ansible playbook:
+
+```bash
+ansible-playbook -i ansible/inventory.ini ansible/main.yml
+```
+
+The second run should produce no changes.
+
+---
+
+## Cleanup
+
 ```bash
 vagrant destroy -f
-rm -rf .vagrant
-./deploy.sh
 ```
 
 ---
 
-## 📚 Полезные команды
+## Purpose
 
-### Vagrant
-
-```bash
-vagrant up              # Запустить все VM
-vagrant up <name>       # Запустить конкретную VM
-vagrant halt            # Остановить все VM
-vagrant halt <name>     # Остановить конкретную VM
-vagrant destroy -f      # Удалить все VM
-vagrant reload          # Перезагрузить VM
-vagrant ssh <name>      # Подключиться к VM
-vagrant status          # Статус всех VM
-vagrant global-status   # Статус всех Vagrant проектов
-```
-
-### Ansible
-
-```bash
-ansible all -m ping -i inventory.ini              # Проверить подключение
-ansible-playbook playbook.yml -i inventory.ini    # Запустить playbook
-ansible-playbook playbook.yml --check             # Dry run
-ansible-playbook playbook.yml -v                  # Verbose
-ansible-playbook playbook.yml --tags "docker"     # Только определенные задачи
-ansible-playbook playbook.yml --limit "webservers" # Только определенные хосты
-```
-
-### Docker
-
-```bash
-docker ps                      # Running контейнеры
-docker ps -a                   # Все контейнеры
-docker images                  # Список образов
-docker logs <container>        # Логи контейнера
-docker exec -it <container> bash  # Войти в контейнер
-docker stop <container>        # Остановить контейнер
-docker rm <container>          # Удалить контейнер
-docker rmi <image>            # Удалить образ
-```
-
-### Debugging
-
-```bash
-# SSH в VM и выполнить команду
-vagrant ssh app -c "docker ps"
-
-# Скопировать файл в VM
-vagrant ssh app -c "cat > /tmp/test.txt" < local.txt
-
-# Скопировать файл из VM
-vagrant ssh app -c "cat /tmp/test.txt" > local.txt
-
-# Проверить сеть
-vagrant ssh web1 -c "ping -c 3 192.168.56.13"
-
-# Проверить порты
-vagrant ssh app -c "sudo netstat -tlnp"
-```
+This project was created to demonstrate:
+- Infrastructure as Code
+- Automation and repeatability
+- CI/CD pipelines
+- Load balancing fundamentals
 
 ---
 
-## 📖 Дополнительная документация
+## Author
 
-- [Vagrant Documentation](https://www.vagrantup.com/docs)
-- [Ansible Documentation](https://docs.ansible.com/)
-- [Docker Documentation](https://docs.docker.com/)
-- [Jenkins Documentation](https://www.jenkins.io/doc/)
-- [Nginx Documentation](https://nginx.org/en/docs/)
+**Pavlo (Pablo9298)**  
+DevOps / Full-Stack Developer
+
 
 ---
 
-## 🎓 Что ты изучил
+## Verification (Review)
 
-- ✅ Infrastructure as Code (IaC)
-- ✅ Configuration Management
-- ✅ Containerization
-- ✅ CI/CD Pipelines
-- ✅ Load Balancing
-- ✅ Security Hardening
-- ✅ Monitoring & Metrics
-- ✅ Automation & Orchestration
-- ✅ DevOps Best Practices
+For a step-by-step set of commands to demonstrate hostnames, networking, security hardening, firewall rules, containers, and load balancing, see:
 
----
-
-## 👨‍💻 Для ревью
-
-### Демонстрация с нуля (blank slate):
-
-1. **Покажи что VM нет**:
-```bash
-vagrant status
-vboxmanage list vms
-```
-
-2. **Запусти автоматизацию**:
-```bash
-./deploy.sh
-```
-
-3. **Дождись завершения** (~15-20 минут)
-
-4. **Покажи результат**:
-```bash
-vagrant status
-curl http://192.168.56.10
-```
-
-5. **Открой в браузере**: http://192.168.56.10
-
-### Демонстрация CI/CD:
-
-1. **Измени код**:
-```bash
-nano app/frontend/index.html
-# Добавь версию
-```
-
-2. **Закоммить**:
-```bash
-git add .
-git commit -m "Update version"
-git push
-```
-
-3. **Покажи Jenkins**: http://192.168.56.14:8080
-
-4. **Обнови браузер**: http://192.168.56.10
-
-### Ответы на вопросы ревью:
-
-**Почему Vagrant?**
-- Простой декларативный синтаксис
-- Встроенная поддержка VirtualBox
-- Идемпотентность из коробки
-- Легко масштабировать
-
-**Почему Ansible?**
-- Agentless (не требует установки)
-- YAML синтаксис (читаемый)
-- Идемпотентность встроена
-- Большое сообщество
-
-**Почему Jenkins?**
-- Самый популярный CI/CD инструмент
-- Богатая экосистема плагинов
-- Простая настройка
-- Хорошая документация
-
-**Что такое идемпотентность?**
-"Идемпотентность означает, что повторный запуск скрипта дает тот же результат без побочных эффектов. Vagrant и Ansible идемпотентны по дизайну - они проверяют текущее состояние и применяют только необходимые изменения."
-
----
-
-## 📄 Лицензия
-
-MIT License - используй как хочешь!
-
----
-
-## 🎉 Заключение
-
-Поздравляю! Ты создал полностью автоматизированную инфраструктуру с CI/CD pipeline.
-
-**Все тесты на ревью пройдены!** ✅
-
-Удачи на ревью! 🚀
-
----
-
-**Made with ❤️ for DevOps learning**
-polling trigger Thu Dec 25 01:24:05 PM EET 2025
+- `VERIFICATION.md`
